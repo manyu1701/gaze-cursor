@@ -16,15 +16,14 @@ import cv2
 
 from gaze_cursor.capture import Camera
 from gaze_cursor.config import ScreenConfig
-from gaze_cursor.eval.session import CALIB, TEST, SessionRecorder
-from gaze_cursor.eval.targets import calibration_grid, held_out_points
+from gaze_cursor.eval.session import SessionRecorder
+from gaze_cursor.eval.targets import build_plan
 from gaze_cursor.features import extract_features
 from gaze_cursor.landmarks import FaceTracker
 from gaze_cursor.sinks.overlay import FullscreenCanvas
 
 SETTLE_S = 0.7   # eyes travel to the new dot; not recorded
-RECORD_S = 1.5
-SEED = 0
+RECORD_S = {"v1": 1.5, "v2": 1.0}  # error rises after ~1.2 s on a fixation, so v2 records less
 
 
 def check_screen(cfg: ScreenConfig) -> None:
@@ -56,22 +55,31 @@ def check_screen(cfg: ScreenConfig) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check-screen", action="store_true")
+    ap.add_argument("--layout", choices=("v1", "v2"), default="v2",
+                    help="v2: 16 edge-reaching calibration + 9 interior held-out targets, random "
+                         "order, 1 s each; v1: the M1 layout (9 + 12, 1.5 s)")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="seed for held-out points and order (default: fresh, stored in the session)")
+    ap.add_argument("--note", default="", help='condition tag stored in the session, e.g. "evening, lamp"')
     args = ap.parse_args()
     cfg = ScreenConfig.from_system()
     print(f"screen: {cfg}")
     if args.check_screen:
         check_screen(cfg)
         return
-    grid = calibration_grid(cfg)
-    held_out = held_out_points(cfg, grid, seed=SEED)
-    plan = [(CALIB, i, p) for i, p in enumerate(grid)]
-    plan += [(TEST, len(grid) + i, p) for i, p in enumerate(held_out)]
+    seed = int(time.time()) % 2**31 if args.seed is None else args.seed
+    record_s = RECORD_S[args.layout]
+    plan = [(t.phase, t.idx, t.xy) for t in build_plan(cfg, args.layout, seed)]
     unsafe = [p for _, _, p in plan if not cfg.target_is_safe(tuple(p))]
     if unsafe:
         raise SystemExit(f"{len(unsafe)} targets are too close to the edges, notch or rounded corners")
+    n_calib = sum(1 for ph, _, _ in plan if ph == 0)
+    print(f"layout {args.layout}: {len(plan)} targets ({n_calib} calibration, {len(plan) - n_calib} "
+          f"held-out), seed {seed}, ~{len(plan) * (SETTLE_S + record_s):.0f} s")
     rec = SessionRecorder(meta={
-        "screen": cfg.to_dict(), "seed": SEED, "settle_s": SETTLE_S, "record_s": RECORD_S,
-        "mirrored": False, "blendshape_names": [], "n_calib": len(grid), "n_test": len(held_out),
+        "screen": cfg.to_dict(), "layout": args.layout, "seed": seed, "note": args.note,
+        "settle_s": SETTLE_S, "record_s": record_s, "mirrored": False, "blendshape_names": [],
+        "n_calib": n_calib, "n_test": len(plan) - n_calib,
         "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
     })
     with Camera() as cam, FaceTracker() as tracker, FullscreenCanvas(cfg) as canvas:
@@ -91,7 +99,7 @@ def main() -> None:
                 break
         for n, (phase, idx, xy) in enumerate(plan):
             start = time.monotonic()
-            while (elapsed := time.monotonic() - start) < SETTLE_S + RECORD_S:
+            while (elapsed := time.monotonic() - start) < SETTLE_S + record_s:
                 frame = cam.read()
                 img = canvas.blank()
                 canvas.dot(img, xy, color=(255, 255, 255) if elapsed < SETTLE_S else (0, 255, 0))

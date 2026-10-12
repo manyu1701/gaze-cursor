@@ -5,7 +5,8 @@ Read this first in a new session, then `CLAUDE.md` and `PLAN.md`. Update it at t
 ## Status
 - **M0: DONE** (confirmed by Abhimanyu, 2026-10-13). Live viewer at 30 fps, mesh and irises aligned.
 - **M1: DONE** (confirmed by Abhimanyu, 2026-10-13). Dot follows gaze; the benchmark is bit-identical on repeated runs. Best exploratory number so far: `gaze` ridge 3.12 deg mean on `session_20261013_030654` (not a project baseline: chosen after seeing test results on one session).
-- **Next: M2 steps 1 and 2 only** (evaluation harness `scripts/evaluate.py`, calibration layout `v2`), under the pre-registration below. Nothing from M2 step 3 onward until those are done and confirmed.
+- **M2 steps 1 and 2: BUILT, awaiting Abhimanyu's confirmation and the 3 new recordings.** `scripts/evaluate.py` (modes within / loto / losos, per-target stats, bootstrap CIs over targets, paired comparison, per-target bias/spread, `--preregistered`) and calibration layout `v2` (`calibrate.py --layout v2 --note ...`) are implemented and tested (47 tests). Nothing from M2 step 3 onward until confirmed.
+- **Next (Abhimanyu):** (1) dry-run `uv run scripts/calibrate.py` once and confirm the 25 dots are random, reach the edges and take ~45 s; (2) record 3 v2 sessions at different times of day/lighting, each with `--note "..."`, same posture each time; (3) then Claude runs `uv run scripts/evaluate.py --preregistered` exactly once.
 - Git: `main` is ahead of `origin/main` (only M0 was pushed, `87c5e33`); nothing is pushed without Abhimanyu asking. Commit `b0dcb48` ("Record latest M1 benchmark results") also contains Abhimanyu's edits to CLAUDE.md, PLAN.md and PROGRESS.md, swept in by `git add -A`.
 
 ## Session inventory
@@ -60,6 +61,14 @@ Numpy ridge, held-out 12 targets, mean deg per session (025905 / 030424 / 030654
   - Three sessions carry little session-level information. A secondary sensitivity analysis uses a two-level bootstrap (resample sessions, then targets).
   - Everything else computed is exploratory and labeled so (`confirmatory=0` in `results.csv`).
 
+## M2 steps 1-2: implementation notes (2026-10-13)
+- Feature set `gaze_blend` (iris xy + 14 eye blendshapes, 18 cols, pose-free) added; registry configs in `eval/configs.py` (`iris_a1`, `iris_a100`, `eyes_a10`, `gaze_a1/10/100`, `gaze_blend_a10/100`, `both_a100`); pre-registered pair `gaze_a10` (ref) vs `gaze_blend_a100`.
+- Layout v2: 4x4 calibration grid at x 24..1446, y 56..932 pt (safe edges + 8 pt margin) and 9 held-out points inside it (>= 60 pt from its edges, >= 100 px from grid points and each other), all 25 in one random order from a stored seed, settle 0.7 s + record 1.0 s. Session format unchanged; meta gains `layout`, `seed`, `note`.
+- `--preregistered` takes the earliest 3 clean v2 sessions with >= 80% valid frames as held-out, trains on the older clean sessions plus the other held-out v2 sessions, ignores extra v2 sessions entirely, and refuses (exit 2) with fewer than 3. It was run only to confirm the refusal; no confirmatory result exists.
+- `results.csv` now has one shared schema (`mode`, `confirmatory`, `config`, CI columns...); the old file was migrated in place (old rows: mode=within, confirmatory=0). Verified: `evaluate.py --modes within` on session 030654 gives frame-mean 3.12 deg for `gaze_a1`, equal to `benchmark.py`; repeated runs are identical.
+- EXPLORATORY output on the 3 existing clean sessions (these sessions suggested H1, so this is not evidence for it), mean deg over targets [95% CI]: within `gaze_a10` 4.04 [3.52, 4.57] vs `gaze_blend_a100` 3.86 [3.33, 4.44] (paired d = +0.18, CI [-0.23, +0.61]); leave-one-session-out over all 21 targets per held-out session: `gaze_a10` 5.57 vs `gaze_blend_a100` 4.52 (d = +1.05, CI [+0.70, +1.39], 3/3 sessions); `iris_a1` (with raw pose) 4.78 under pooled training, better than `gaze` there (pose becomes learnable once training pools sessions with different postures; keep in mind for step 3+).
+- Known design limits: LOSO tests all 21 v1 targets, including the grid targets that sit near the training pool's edge; within-session numbers use 12 test targets per session, so CIs are wide; three sessions give weak session-level inference (hence the two-level bootstrap column in the paired report).
+
 ## Display facts (locked in `ScreenConfig`)
 - Panel (Apple tech specs, support.apple.com/en-us/126320): 13.6" Liquid Retina, 2560x1664 at 224 ppi (= 29.0 x 18.9 cm; Quartz/EDID gives 29.06 x 18.90). Apple: only the TOP corners are rounded (bottom square) and the actual viewable area is smaller than the 13.6" rectangle.
 - Default mode is "looks like 1470x956" (rendered at 2x = 2940x1912, downscaled to the panel), so 1 pt = 0.01975 cm. Pixels everywhere in this project are logical points.
@@ -68,9 +77,9 @@ Numpy ridge, held-out 12 targets, mean deg per session (025905 / 030424 / 030654
 
 ## What exists
 - Packaging: `pyproject.toml` (uv, Python 3.12, hatchling src layout), `.python-version`, `.gitignore`, `README.md`, `uv.lock`.
-- `src/gaze_cursor/`: `capture.py` (`Camera`, `Frame`; AVFoundation, 1280x720 at 30), `landmarks.py` (`FaceTracker` Tasks API VIDEO mode with blendshapes, `LandmarkResult`, `head_pose_from_matrix`), `features.py` (iris/pose/openness features, blendshape subset, feature sets `iris`, `eyes`, `gaze`, `blend`, `both`), `calibration.py` (`GazeModel`: ridge, poly2), `config.py` (`ScreenConfig`, Quartz/AppKit geometry, `target_is_safe`), `eval/` (`session.py` record and replay, `targets.py` v1 layout, `metrics.py` px/cm/deg and jitter), `sinks/overlay.py` (borderless NSWindow canvas).
-- `scripts/`: `download_model.py`, `viewer.py`, `calibrate.py` (`--check-screen`), `benchmark.py`, `gaze_overlay.py`.
-- `tests/`: head pose, features, metrics, calibration, session/config (27 tests at M1 close).
+- `src/gaze_cursor/`: `capture.py` (`Camera`, `Frame`; AVFoundation, 1280x720 at 30), `landmarks.py` (`FaceTracker` Tasks API VIDEO mode with blendshapes, `LandmarkResult`, `head_pose_from_matrix`), `features.py` (iris/pose/openness features, blendshape subset, feature sets `iris`, `eyes`, `gaze`, `blend`, `both`), `calibration.py` (`GazeModel`: ridge, poly2), `config.py` (`ScreenConfig`, Quartz/AppKit geometry, `target_is_safe`), `eval/` (`session.py` record/replay + `is_clean`/`layout`/`select_all`/`clean_sessions`, `targets.py` v1 and v2 layouts + `build_plan`, `metrics.py` px/cm/deg and jitter, `configs.py` named configs and the pre-registered pair, `splits.py` the three modes, `stats.py` per-target aggregation, bootstrap, paired comparison, `runner.py`, `results_log.py` shared CSV writer with in-place migration), `sinks/overlay.py` (borderless NSWindow canvas).
+- `scripts/`: `download_model.py`, `viewer.py`, `calibrate.py` (`--check-screen`, `--layout v1|v2`, `--seed`, `--note`), `benchmark.py`, `evaluate.py`, `gaze_overlay.py`.
+- `tests/`: head pose, features, metrics, calibration, session/config, splits (no train/test leakage per mode), stats, layout v2, results-log migration (47 tests; synthetic sessions in `tests/helpers.py`).
 - Data: `models/face_landmarker.task` (gitignored), `data/sessions/` (gitignored), `data/results.csv` (tracked, benchmark log), `debug/` (gitignored PNG dumps).
 
 ## Gotchas and decisions

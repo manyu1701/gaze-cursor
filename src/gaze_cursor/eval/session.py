@@ -13,6 +13,7 @@ from gaze_cursor.features import N_FEATURES, assemble, extract_features
 
 SESSIONS_DIR = Path(__file__).resolve().parents[3] / "data" / "sessions"
 CALIB, TEST = 0, 1
+CLEAN_WINDOW = [0, 0, 1470, 956]
 N_BLEND = 52  # FaceLandmarker blendshape count; names are stored in meta["blendshape_names"]
 
 
@@ -69,6 +70,32 @@ class Session:
     def valid(self) -> np.ndarray:
         return ~np.isnan(self.features).any(axis=1) & ~np.isnan(self.blendshapes).any(axis=1)
 
+    @property
+    def is_clean(self) -> bool:
+        """True if targets were drawn 1:1 on the full display (borderless window at 0,0,1470,956).
+
+        Earlier sessions used an OpenCV window that squeezed or shifted the canvas, so their
+        target positions are biased and must not be used for evaluation.
+        """
+        return list(self.meta.get("window") or []) == CLEAN_WINDOW
+
+    @property
+    def layout(self) -> str:
+        return str(self.meta.get("layout", "v1"))
+
+    @property
+    def valid_fraction(self) -> float:
+        return float(self.valid.mean()) if len(self.valid) else 0.0
+
+    def select_all(
+        self, feature_set: str = "iris"
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Valid rows of every phase: (model input, target_xy, target_idx, phase)."""
+        m = self.valid
+        names = tuple(self.meta.get("blendshape_names", ()))
+        x = assemble(self.features[m], self.blendshapes[m], names, feature_set)
+        return x, self.target_xy[m], self.target_idx[m], self.phase[m]
+
     def select(
         self, phase: int, feature_set: str = "iris"
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -102,6 +129,12 @@ def load_session(path: Path, recompute_features: bool = True) -> Session:
             target_idx=d["target_idx"], target_xy=d["target_xy"], features=features,
             blendshapes=d["blendshapes"],
         )
+
+
+def clean_sessions(directory: Path = SESSIONS_DIR) -> list[Session]:
+    """All sessions whose targets were drawn 1:1 on the display, oldest first."""
+    sessions = [load_session(p) for p in sorted(directory.glob("session_*.npz"))]
+    return [s for s in sessions if s.is_clean]
 
 
 def latest_session(directory: Path = SESSIONS_DIR) -> Path:

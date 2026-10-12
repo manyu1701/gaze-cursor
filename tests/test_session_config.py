@@ -67,3 +67,12 @@ def test_all_standard_targets_are_safe() -> None:
     grid = calibration_grid(cfg)
     pts = [*grid, *held_out_points(cfg, grid)]
     assert all(cfg.target_is_safe(tuple(p)) for p in pts)
+
+
+def test_clean_layout_and_valid_fraction_flags() -> None:
+    from tests.helpers import fake_session
+
+    assert fake_session(0).is_clean and fake_session(0).layout == "v1"
+    assert not fake_session(0, window=[0, 33, 1470, 923]).is_clean
+    assert fake_session(0, layout="v2").layout == "v2"
+    assert fake_session(0).valid_fraction == 1.0

@@ -1,24 +1,21 @@
 """Offline evaluation: fit on a session's calibration targets, test on its held-out targets.
 
 Usage: uv run scripts/benchmark.py [session.npz] [--model ridge|poly2] [--alpha 1.0]
-                                   [--features iris|blend|both]
+                                   [--features iris|eyes|gaze|blend|both|gaze_blend]
 Appends one row to data/results.csv.
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
-import time
 from pathlib import Path
 
 from gaze_cursor.calibration import MODELS, GazeModel
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.eval.metrics import error_metrics, jitter_metrics
+from gaze_cursor.eval.results_log import RESULTS, append_rows, now
 from gaze_cursor.features import FEATURE_SETS
 from gaze_cursor.eval.session import CALIB, TEST, latest_session, load_session
-
-RESULTS = Path(__file__).resolve().parents[1] / "data" / "results.csv"
 
 
 def main() -> None:
@@ -49,16 +46,12 @@ def main() -> None:
           f"{metrics['err_deg_median']:.2f} deg)")
     print(f"jitter {metrics['jitter_px']:.1f} px | {metrics['jitter_deg']:.2f} deg")
 
-    row = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "session": session.path.name,
-           "model": args.model, "features_set": args.features, "alpha": args.alpha, "n_train": len(x_tr), "n_test": len(x_te),
-           **{k: round(v, 4) for k, v in metrics.items()}}
-    new = not RESULTS.exists()
-    RESULTS.parent.mkdir(parents=True, exist_ok=True)
-    with RESULTS.open("a", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(row))
-        if new:
-            w.writeheader()
-        w.writerow(row)
+    append_rows([{
+        "time": now(), "mode": "within", "confirmatory": 0,
+        "config": f"{args.features}_a{args.alpha:g}", "session": session.path.name,
+        "model": args.model, "features_set": args.features, "alpha": args.alpha,
+        "n_sessions": 1, "n_train": len(x_tr), "n_test": len(x_te), **metrics,
+    }])
     print(f"appended to {RESULTS}")
 
 

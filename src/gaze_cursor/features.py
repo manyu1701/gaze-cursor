@@ -22,7 +22,7 @@ BLEND_FEATURE_NAMES = tuple(
     for kind in ("LookIn", "LookOut", "LookUp", "LookDown", "Blink", "Squint", "Wide")
     for side in ("Left", "Right")
 )
-FEATURE_SETS = ("iris", "blend", "both", "eyes", "gaze")
+FEATURE_SETS = ("iris", "blend", "both", "eyes", "gaze", "gaze_blend")
 
 # Below this the eye is treated as closed. Kept low on purpose: lids narrow naturally when looking
 # down (median openness ~0.15 at the bottom of the screen on a laptop webcam), so a higher cutoff
@@ -81,6 +81,7 @@ def assemble(
     - ``iris``: the 9 base features (iris position, head pose, eye openness).
     - ``eyes``: iris position + eye openness, no head pose.
     - ``gaze``: iris position only (4), no head pose and no openness. Robust to posture changes.
+    - ``gaze_blend``: iris position (4) + the BLEND_FEATURE_NAMES blendshapes (14); pose-free.
     - ``blend``: head pose (yaw/pitch/roll) + the blendshape subset, no iris geometry.
     - ``both``: iris + blendshape subset.
     """
@@ -90,6 +91,8 @@ def assemble(
         return features[..., [0, 1, 2, 3, 7, 8]]
     if feature_set == "gaze":
         return features[..., :4]
+    if feature_set == "gaze_blend":
+        return np.concatenate([features[..., :4], blend_features(blendshapes, names)], axis=-1)
     blend = blend_features(blendshapes, names)
     if feature_set == "blend":
         return np.concatenate([features[..., 4:7], blend], axis=-1)
