@@ -52,7 +52,7 @@ def main() -> None:
                 x, y = np.mean(recent, axis=0)
                 canvas.dot(img, (np.clip(x, 0, cfg.width_px), np.clip(y, 0, cfg.height_px)),
                            color=(0, 255, 0), r=20)
-            canvas.text(img, "q / ESC to quit", y=cfg.height_px - 30)
+            canvas.text(img, "q / ESC to quit", y=canvas.size[1] - 30)
             if canvas.show(img) in (27, ord("q")):
                 break
 

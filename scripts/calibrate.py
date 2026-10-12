@@ -28,18 +28,20 @@ SEED = 0
 
 
 def check_screen(cfg: ScreenConfig) -> None:
-    """Draw markers at the corners and center in point coordinates; ESC/q exits."""
+    """Draw markers at the visible corners and the screen center, in screen points; ESC/q exits."""
     with FullscreenCanvas(cfg) as canvas:
+        ox, oy = canvas.origin
+        w, h = canvas.size
+        print(f"window origin {canvas.origin}, size {canvas.size}")
         while True:
             img = canvas.blank()
-            for x in (0, cfg.width_px - 1):
-                for y in (0, cfg.height_px - 1):
-                    cv2.circle(img, (x, y), 24, (0, 255, 0), 3, cv2.LINE_AA)
-            cv2.drawMarker(img, (cfg.width_px // 2, cfg.height_px // 2), (0, 255, 0),
-                           cv2.MARKER_CROSS, 40, 2)
-            cv2.rectangle(img, (0, 0), (cfg.width_px - 1, cfg.height_px - 1), (0, 255, 0), 1)
-            canvas.text(img, f"{cfg.width_px} x {cfg.height_px} pt  "
-                             f"{cfg.width_cm:.1f} x {cfg.height_cm:.1f} cm  (ESC to exit)")
+            for x in (ox, ox + w - 1):
+                for y in (oy, oy + h - 1):
+                    canvas.dot(img, (x, y), color=(0, 255, 0), r=24)
+            canvas.dot(img, (cfg.width_px / 2, cfg.height_px / 2), color=(0, 255, 0), r=24)
+            cv2.rectangle(img, (0, 0), (w - 1, h - 1), (0, 255, 0), 1)
+            canvas.text(img, f"screen {cfg.width_px} x {cfg.height_px} pt, visible from y={oy} "
+                             f"(ESC to exit)")
             if canvas.show(img) in (27, ord("q")):
                 return
 
@@ -57,13 +59,19 @@ def main() -> None:
     held_out = held_out_points(cfg, grid, seed=SEED)
     plan = [(CALIB, i, p) for i, p in enumerate(grid)]
     plan += [(TEST, len(grid) + i, p) for i, p in enumerate(held_out)]
+    if not all(0 <= p[0] < cfg.width_px and 0 <= p[1] < cfg.height_px for _, _, p in plan):
+        raise SystemExit("A target falls outside the screen")
     rec = SessionRecorder(meta={
         "screen": cfg.to_dict(), "seed": SEED, "settle_s": SETTLE_S, "record_s": RECORD_S,
         "mirrored": False, "blendshape_names": [], "n_calib": len(grid), "n_test": len(held_out),
         "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
     })
     with Camera() as cam, FaceTracker() as tracker, FullscreenCanvas(cfg) as canvas:
-        # Wait for SPACE while showing the live pipeline is alive.
+        rec.meta["window"] = [*canvas.origin, *canvas.size]
+        hidden = [p for _, _, p in plan if not canvas.visible(p)]
+        if hidden:
+            raise SystemExit(f"{len(hidden)} targets fall outside the visible window {rec.meta['window']}")
+        # Wait for SPACE.
         while True:
             img = canvas.blank()
             canvas.text(img, "Sit ~60 cm away, head still. Press SPACE to start, ESC to abort.")
@@ -79,7 +87,7 @@ def main() -> None:
                 frame = cam.read()
                 img = canvas.blank()
                 canvas.dot(img, xy, color=(255, 255, 255) if elapsed < SETTLE_S else (0, 255, 0))
-                canvas.text(img, f"{n + 1}/{len(plan)}", y=40)
+                canvas.text(img, f"{n + 1}/{len(plan)}", y=40)  # y: canvas pixels
                 if canvas.show(img) == 27:
                     print("Aborted; nothing saved.")
                     return
