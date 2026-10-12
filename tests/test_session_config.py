@@ -44,3 +44,26 @@ def test_features_recomputed_from_stored_landmarks(tmp_path: Path) -> None:
     rec.add(1, CALIB, 0, (0.0, 0.0), pts, np.eye(4), stale, blend)
     s = load_session(rec.save(tmp_path))
     assert s.features[0] == pytest.approx(extract_features(pts, np.eye(4), (1000, 1000)))
+
+
+def test_target_safety_rules() -> None:
+    cfg = ScreenConfig()  # 1470x956, notch strip 32 pt, assumed corner radius 24
+    assert cfg.target_is_safe((735, 478))
+    assert cfg.target_is_safe((147, 96))                      # calibration grid corner
+    assert not cfg.target_is_safe((735, 10))                  # inside the menu-bar/notch strip
+    assert not cfg.target_is_safe((5, 500))                   # too close to the left edge
+    assert not cfg.target_is_safe((1465, 940))                # too close to the bottom-right
+    assert cfg.target_is_safe((17, 940))                      # bottom corners are square
+    big = ScreenConfig(corner_radius_pt=80, top_inset_pt=0)   # arc check, with no strip to hide it
+    assert not big.target_is_safe((20, 20))                   # outside the rounded top-left arc
+    assert not big.target_is_safe((1450, 20))                 # ... and the top-right
+    assert big.target_is_safe((80, 80))                       # at the arc center
+
+
+def test_all_standard_targets_are_safe() -> None:
+    from gaze_cursor.eval.targets import calibration_grid, held_out_points
+
+    cfg = ScreenConfig()
+    grid = calibration_grid(cfg)
+    pts = [*grid, *held_out_points(cfg, grid)]
+    assert all(cfg.target_is_safe(tuple(p)) for p in pts)

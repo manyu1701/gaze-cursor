@@ -28,20 +28,27 @@ SEED = 0
 
 
 def check_screen(cfg: ScreenConfig) -> None:
-    """Draw markers at the visible corners and the screen center, in screen points; ESC/q exits."""
+    """Draw the notch strip, the safe-area corner markers and the center; ESC/q exits.
+
+    Corner markers sit at the extreme positions ``target_is_safe`` allows, so all four must be
+    fully visible (the rounded top corners and the notch must not cut them off).
+    """
     with FullscreenCanvas(cfg) as canvas:
-        ox, oy = canvas.origin
-        w, h = canvas.size
         print(f"window origin {canvas.origin}, size {canvas.size}")
+        r, ring = cfg.corner_radius_pt, 16
+        xs = (ring + 1, cfg.width_px - ring - 1)
+        ys = (cfg.top_inset_pt + ring + 1, cfg.height_px - ring - 1)
         while True:
             img = canvas.blank()
-            for x in (ox, ox + w - 1):
-                for y in (oy, oy + h - 1):
-                    canvas.dot(img, (x, y), color=(0, 255, 0), r=24)
-            canvas.dot(img, (cfg.width_px / 2, cfg.height_px / 2), color=(0, 255, 0), r=24)
-            cv2.rectangle(img, (0, 0), (w - 1, h - 1), (0, 255, 0), 1)
-            canvas.text(img, f"screen {cfg.width_px} x {cfg.height_px} pt, visible from y={oy} "
-                             f"(ESC to exit)")
+            x0, y0 = canvas._px((cfg.notch_x0_pt, 0))
+            x1, y1 = canvas._px((cfg.notch_x1_pt, cfg.top_inset_pt))
+            cv2.rectangle(img, (x0, y0), (x1, y1), (0, 0, 255), 1)       # notch outline (red)
+            cv2.line(img, (0, y1), (img.shape[1], y1), (0, 0, 255), 1)    # menu-bar strip bottom
+            for x in xs:
+                for y in ys:
+                    canvas.dot(img, (x, y), color=(0, 255, 0), r=ring)
+            canvas.dot(img, (cfg.width_px / 2, cfg.height_px / 2), color=(0, 255, 0), r=ring)
+            canvas.text(img, "Four green rings must be fully visible. ESC to exit.")
             if canvas.show(img) in (27, ord("q")):
                 return
 
@@ -59,8 +66,9 @@ def main() -> None:
     held_out = held_out_points(cfg, grid, seed=SEED)
     plan = [(CALIB, i, p) for i, p in enumerate(grid)]
     plan += [(TEST, len(grid) + i, p) for i, p in enumerate(held_out)]
-    if not all(0 <= p[0] < cfg.width_px and 0 <= p[1] < cfg.height_px for _, _, p in plan):
-        raise SystemExit("A target falls outside the screen")
+    unsafe = [p for _, _, p in plan if not cfg.target_is_safe(tuple(p))]
+    if unsafe:
+        raise SystemExit(f"{len(unsafe)} targets are too close to the edges, notch or rounded corners")
     rec = SessionRecorder(meta={
         "screen": cfg.to_dict(), "seed": SEED, "settle_s": SETTLE_S, "record_s": RECORD_S,
         "mirrored": False, "blendshape_names": [], "n_calib": len(grid), "n_test": len(held_out),

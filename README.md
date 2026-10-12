@@ -39,7 +39,7 @@ uv run scripts/gaze_overlay.py           # live gaze dot, using the latest sessi
 - `benchmark.py [session.npz] [--model ridge|poly2] [--alpha 1.0] [--features iris|blend|both]`: runs offline from a recording, with no camera. `iris` is the baseline (iris position, head pose, eye openness); `blend` uses head pose plus the face blendshapes; `both` combines them. It prints error (px, cm, degrees; mean and median) and jitter, and appends a row to `data/results.csv`.
 - `gaze_overlay.py [session.npz] [--model ridge|poly2] [--features iris|blend|both]`: `q` or `ESC` quits.
 
-Screen size (in macOS points) and physical size are read from Quartz at run time, and the viewing distance defaults to 60 cm (`src/gaze_cursor/config.py`). Frames are never mirrored for processing or recording; the viewer flips its display only. Face blendshapes are recorded in every session as candidate features.
+Screen size (in macOS points), physical size, and the notch/menu-bar strip are read from macOS at run time, and targets are kept clear of the notch and the rounded top corners, and the viewing distance defaults to 60 cm (`src/gaze_cursor/config.py`). Frames are never mirrored for processing or recording; the viewer flips its display only. Face blendshapes are recorded in every session as candidate features.
 
 ## How it works
 

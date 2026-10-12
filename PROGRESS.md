@@ -22,6 +22,12 @@ Read this first in a new session, then `CLAUDE.md` and `PLAN.md`. Update it at t
 - Offset still present after the Quartz-bounds fix (user: top corners "a few cm short"). Second session (session_20261013_025134, window recorded as [0,33,1470,923]): iris ridge 263 px / 4.94 deg mean (median 4.49), jitter 4.57 deg, train err 187 px; top targets biased +128 px in y vs +54 bottom, consistent with a hidden title strip squeezing the canvas. That session is still biased. Replaced the OpenCV window with a borderless NSWindow at shielding level covering the whole display (`sinks/overlay.py`, pyobjc-framework-Cocoa added): Quartz reports bounds (0,0,1470,956), exactly 1:1. NOT yet viewed by the user: rerun `--check-screen`, then recalibrate.
 - Observed within-fixation scatter is huge (per-target prediction std ~100-340 px): noise, not offset, dominates; M2 (smoothing, outlier/blink rejection, head compensation) is where this gets addressed.
 
+## Display facts (locked in `ScreenConfig`)
+- Panel (Apple tech specs, support.apple.com/en-us/126320): 13.6" Liquid Retina, 2560x1664 at 224 ppi (= 29.0 x 18.9 cm, matches Quartz/EDID 29.06 x 18.90). Apple: only the TOP corners are rounded (bottom square) and the actual viewable area is smaller than the 13.6" rectangle.
+- Default mode is "looks like 1470x956" (rendered at 2x = 2940x1912, downscaled to the panel), so 1 pt = 0.01975 cm.
+- Measured via AppKit on this Mac: `safeAreaInsets.top` = 32 pt (menu bar/notch strip); notch spans x = 646..825 pt (179 pt wide, 32 pt tall). `ScreenConfig.from_system()` reads these.
+- Corner radius: NOT published by Apple and no public API; `corner_radius_pt = 24` is a generous ASSUMPTION used only to keep targets away. `target_is_safe()` rejects targets within ring radius of the edges, the 32 pt strip or the rounded corners; `calibrate.py` aborts if any are unsafe (grid inset 10% = 147x96 pt and held-out margin 8% easily pass). `--check-screen` draws the four extreme-safe rings plus the notch outline.
+
 ## What exists
 - `pyproject.toml` (uv, Python 3.12, hatchling src layout), `.python-version`, `.gitignore`
 - `src/gaze_cursor/capture.py`: `Camera` (AVFoundation, 1280x720@30), `Frame`
