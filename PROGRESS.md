@@ -8,7 +8,8 @@ Read this first in a new session, then `CLAUDE.md` and `PLAN.md`. Update it at t
   - Verified so far: `uv run pytest` (6 pass, head-pose math); model downloaded; `FaceTracker` runs on a blank frame (returns None); viewer imports.
   - Live run (user, 2026-10-13): 7 PNGs in `debug/`; the 3 inspected show 30.0 fps, mesh aligned, iris circles centered on pupils, `s` dump works. Head turn showed yaw -32 when face turned toward image-left (mirrored view, so user's left = negative yaw). Only a head turn was checked; pitch/roll signs and the quit check not confirmed.
 - **M1: code written and unit-tested, NOT yet run live.** Plan approved (9 calibration + 12 held-out points). 19 tests pass; benchmark ran twice on a synthetic session with identical output.
-  - **Next (user):** `uv run scripts/calibrate.py` -> `uv run scripts/benchmark.py` -> `uv run scripts/gaze_overlay.py`. Done when the dot follows gaze and the benchmark prints a reproducible baseline.
+  - **M1: baseline reproducible (3 real sessions benchmarked); close it once Abhimanyu confirms the overlay dot follows his gaze.** **Next:** M2 per PLAN.md, starting with the evaluation foundation and calibration redesign.
+- (old) **Next (user):** `uv run scripts/calibrate.py` -> `uv run scripts/benchmark.py` -> `uv run scripts/gaze_overlay.py`. Done when the dot follows gaze and the benchmark prints a reproducible baseline.
   - Unverified live: run `calibrate.py --check-screen` first (window mapping), then calibrate flow, features on real data.
   - M1 amendments (user-requested, done): raw frames everywhere with display-only mirroring; screen geometry from Quartz; blendshapes recorded as candidate features.
 - M0 committed and pushed to origin/main (87c5e33). M1 decision: 9 calibration points + separate held-out test points.
@@ -28,6 +29,16 @@ Read this first in a new session, then `CLAUDE.md` and `PLAN.md`. Update it at t
 - Not conclusive for feature choice: across the three sessions pose hurts in two and helps in one (4.94 vs 5.94 deg), and cross-session (train session 2, test session 3) is ~6-7 deg for every set. So the lesson is head pose needs proper compensation (M2), not removal; `gaze` is just the robust live default. Do NOT read the 3.99 deg as the project's baseline: it was chosen after seeing test results on one session.
 - Added feature sets `eyes` (6) and `gaze` (4); overlay defaults to `gaze` and shows a warning when any live feature is > 4 calibration sd from its mean ("sit as you did, or recalibrate"). Benchmark default stays `iris` (all 9) so the baseline row stays comparable.
 - Practical: calibrate and run the overlay in the same laptop tilt/posture; recalibrate if the warning appears.
+
+## Independent analysis (claude.ai, 2026-10-13, session_20261013_025905 = first unbiased session)
+Ridge with numpy, iris(9) vs both(9+14 blendshapes), errors in degrees on the 12 held-out targets:
+- **Regularization:** both, alpha 100 -> **3.65 mean / 3.01 median / p90 7.1** (vs 4.25 / 2.98 at alpha 1). iris alone ~4.8-5.1. Blendshapes DO help on unbiased data (the earlier "no help" came from the offset-biased session).
+- **Bias dominates noise:** averaging each fixation's predictions (perfect smoothing) only goes 3.65 -> 3.23. Every top-third target is predicted 260-500 px too LOW (dy +261, +294, +337, +340, +499); bottom-half targets are within ~100 px. Vertical gaze is the weak axis, and some test targets (y=79) sit outside the calibration grid (inset 10% = 96 pt), so the model extrapolates.
+- **Effective n = 9:** 407 calibration frames come from only 9 targets. Leave-one-target-out CV ~5.2-5.4 deg and noisy; poly2 overfits for this reason. Need more targets and sessions, grouped CV, strong regularization.
+- **Time within fixation:** error 4.2 (0-300 ms after settle), 3.9 (300-1200 ms), 4.8 (>1200 ms). Shorter per-target recording, more targets.
+- Next: M2 step 1 + 2 in PLAN.md (evaluation foundation, calibration redesign), then the vertical-bias work.
+
+- Latest session (session_20261013_030654, recalibrated in the same posture; user: overlay "better now"): ridge `gaze` 3.12 deg mean / 2.65 median (166 px, 3.28 cm), jitter 2.75 deg; baseline `iris` (all 9, with head pose) 6.91 deg (369 px). Benchmark output is bit-identical on repeated runs (reproducible). Head pose hurt again (third of four sessions). Awaiting the user's explicit "M1 confirmed".
 
 ## Display facts (locked in `ScreenConfig`)
 - Panel (Apple tech specs, support.apple.com/en-us/126320): 13.6" Liquid Retina, 2560x1664 at 224 ppi (= 29.0 x 18.9 cm, matches Quartz/EDID 29.06 x 18.90). Apple: only the TOP corners are rounded (bottom square) and the actual viewable area is smaller than the 13.6" rectangle.
