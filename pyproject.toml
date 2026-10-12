@@ -7,6 +7,7 @@ dependencies = [
     "mediapipe>=1.1.0",
     "numpy>=2.5.4",
     "opencv-python>=5.0.0.93",
+    "pyobjc-framework-cocoa>=12.2.2",
     "pyobjc-framework-quartz>=12.2.2",
     "scikit-learn>=1.9.1",
 ]

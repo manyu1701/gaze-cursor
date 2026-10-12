@@ -19,6 +19,9 @@ Read this first in a new session, then `CLAUDE.md` and `PLAN.md`. Update it at t
 - Baseline after the fix, all 541 test / 407 train frames valid (ridge, alpha 1): iris 335 px / 6.27 deg (jitter 3.05 deg); blend 370 px / 6.92 deg; both 361 px / 6.77 deg; poly2 alpha 10 on iris: 380 px / 7.10 deg (jitter 4.4 deg). Before the fix (38% of test frames dropped): iris 5.42 deg. Blendshapes did not help over iris features on this one session.
 - Not yet addressed: remaining blink/outlier frames inflate jitter; no smoothing (M2).
 
+- Offset still present after the Quartz-bounds fix (user: top corners "a few cm short"). Second session (session_20261013_025134, window recorded as [0,33,1470,923]): iris ridge 263 px / 4.94 deg mean (median 4.49), jitter 4.57 deg, train err 187 px; top targets biased +128 px in y vs +54 bottom, consistent with a hidden title strip squeezing the canvas. That session is still biased. Replaced the OpenCV window with a borderless NSWindow at shielding level covering the whole display (`sinks/overlay.py`, pyobjc-framework-Cocoa added): Quartz reports bounds (0,0,1470,956), exactly 1:1. NOT yet viewed by the user: rerun `--check-screen`, then recalibrate.
+- Observed within-fixation scatter is huge (per-target prediction std ~100-340 px): noise, not offset, dominates; M2 (smoothing, outlier/blink rejection, head compensation) is where this gets addressed.
+
 ## What exists
 - `pyproject.toml` (uv, Python 3.12, hatchling src layout), `.python-version`, `.gitignore`
 - `src/gaze_cursor/capture.py`: `Camera` (AVFoundation, 1280x720@30), `Frame`
