@@ -24,7 +24,10 @@ BLEND_FEATURE_NAMES = tuple(
 )
 FEATURE_SETS = ("iris", "blend", "both")
 
-MIN_OPENNESS = 0.15  # below this the eye is treated as closed (blink)
+# Below this the eye is treated as closed. Kept low on purpose: lids narrow naturally when looking
+# down (median openness ~0.15 at the bottom of the screen on a laptop webcam), so a higher cutoff
+# discards real fixations there. Measured on the first real session; see PROGRESS.md.
+MIN_OPENNESS = 0.05
 
 
 def eye_features(

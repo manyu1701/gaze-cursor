@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from gaze_cursor.features import N_FEATURES, assemble
+from gaze_cursor.features import N_FEATURES, assemble, extract_features
 
 SESSIONS_DIR = Path(__file__).resolve().parents[3] / "data" / "sessions"
 CALIB, TEST = 0, 1
@@ -79,11 +79,27 @@ class Session:
         return x, self.target_xy[m], self.target_idx[m]
 
 
-def load_session(path: Path) -> Session:
+def _features_or_nan(points: np.ndarray, transform: np.ndarray, size: tuple[int, int]) -> np.ndarray:
+    f = None if np.isnan(points).any() else extract_features(points, transform, size)
+    return np.full(N_FEATURES, np.nan) if f is None else f
+
+
+DEFAULT_IMAGE_SIZE = (1280, 720)  # camera frame size for sessions recorded before it was stored
+
+
+def load_session(path: Path, recompute_features: bool = True) -> Session:
+    """Load a session. Features are recomputed from the stored landmarks by default, so
+    improvements to feature extraction apply to old recordings (record and replay)."""
     with np.load(path) as d:
+        meta = json.loads(str(d["meta"]))
+        features = d["features"]
+        if recompute_features:
+            size = tuple(meta.get("image_size", DEFAULT_IMAGE_SIZE))
+            features = np.stack([_features_or_nan(p, t, size)
+                                 for p, t in zip(d["points"], d["transform"])]) if len(features) else features
         return Session(
-            path=path, meta=json.loads(str(d["meta"])), t_ms=d["t_ms"], phase=d["phase"],
-            target_idx=d["target_idx"], target_xy=d["target_xy"], features=d["features"],
+            path=path, meta=meta, t_ms=d["t_ms"], phase=d["phase"],
+            target_idx=d["target_idx"], target_xy=d["target_xy"], features=features,
             blendshapes=d["blendshapes"],
         )
 

@@ -13,6 +13,12 @@ Read this first in a new session, then `CLAUDE.md` and `PLAN.md`. Update it at t
   - M1 amendments (user-requested, done): raw frames everywhere with display-only mirroring; screen geometry from Quartz; blendshapes recorded as candidate features.
 - M0 committed and pushed to origin/main (87c5e33). M1 decision: 9 calibration points + separate held-out test points.
 
+## First real session (session_20261013_024055.npz, 2026-10-13)
+- Screen-mapping check (`--check-screen`) showed an OFFSET (user report; direction/size not yet given). Targets may be shifted, so the errors below are NOT trustworthy until this is fixed.
+- Found: openness < 0.15 was dropping real downward fixations (bottom-row median openness 0.145; blendshape eyeBlink also rises when looking down, so it can't separate blinks). Cutoff lowered to 0.05; `load_session` now recomputes features from stored landmarks (record and replay). Camera frame confirmed 1280x720.
+- Baseline after the fix, all 541 test / 407 train frames valid (ridge, alpha 1): iris 335 px / 6.27 deg (jitter 3.05 deg); blend 370 px / 6.92 deg; both 361 px / 6.77 deg; poly2 alpha 10 on iris: 380 px / 7.10 deg (jitter 4.4 deg). Before the fix (38% of test frames dropped): iris 5.42 deg. Blendshapes did not help over iris features on this one session.
+- Not yet addressed: remaining blink/outlier frames inflate jitter; no smoothing (M2).
+
 ## What exists
 - `pyproject.toml` (uv, Python 3.12, hatchling src layout), `.python-version`, `.gitignore`
 - `src/gaze_cursor/capture.py`: `Camera` (AVFoundation, 1280x720@30), `Frame`

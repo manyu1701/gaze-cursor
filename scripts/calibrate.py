@@ -90,6 +90,7 @@ def main() -> None:
                     rec.add(frame.timestamp_ms, phase, idx, xy, None, None, None)
                     continue
                 h, w = frame.image.shape[:2]
+                rec.meta["image_size"] = [w, h]
                 feats = extract_features(result.points, result.transform, (w, h))
                 rec.add(frame.timestamp_ms, phase, idx, xy, result.points, result.transform,
                         feats, result.blendshapes)
