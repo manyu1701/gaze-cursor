@@ -24,10 +24,16 @@ DEBUG_DIR = Path(__file__).resolve().parents[1] / "debug"
 _TESS = mp.tasks.vision.FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION
 
 
-def draw(image: np.ndarray, result: LandmarkResult, fps: float) -> None:
-    """Draw mesh, irises, and head-pose/FPS text onto ``image`` in place."""
+def draw(image: np.ndarray, result: LandmarkResult) -> None:
+    """Draw mesh, irises and head pose onto an already-mirrored display ``image`` in place.
+
+    Landmarks come from the unflipped frame, so x is mirrored here (1 - x) to match the display.
+    The head-pose numbers are for the unflipped frame (same convention as recorded sessions).
+    """
     h, w = image.shape[:2]
-    pts = (result.points[:, :2] * (w, h)).astype(np.int32)
+    xy = result.points[:, :2].copy()
+    xy[:, 0] = 1 - xy[:, 0]
+    pts = (xy * (w, h)).astype(np.int32)
     for c in _TESS:
         cv2.line(image, tuple(pts[c.start]), tuple(pts[c.end]), (90, 90, 90), 1, cv2.LINE_AA)
     for iris in (RIGHT_IRIS, LEFT_IRIS):
@@ -48,14 +54,13 @@ def main() -> None:
                 frame = cam.read()
                 if frame is None:
                     continue
-                image = cv2.flip(frame.image, 1)  # mirror for natural feel
-                frame = type(frame)(image=image, timestamp_ms=frame.timestamp_ms)
-                result = tracker.process(frame)
+                result = tracker.process(frame)  # always the unflipped frame
+                image = cv2.flip(frame.image, 1)  # mirror for display only
                 now = time.perf_counter()
                 times.append(now)
                 fps = (len(times) - 1) / (times[-1] - times[0]) if len(times) > 1 else 0.0
                 if result is not None:
-                    draw(image, result, fps)
+                    draw(image, result)
                 else:
                     cv2.putText(image, "no face", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
                                 (0, 0, 255), 2, cv2.LINE_AA)

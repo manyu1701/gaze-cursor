@@ -16,6 +16,14 @@ N_FEATURES = len(FEATURE_NAMES)
 RIGHT_EYE = (33, 133, 159, 145, 468)
 LEFT_EYE = (362, 263, 386, 374, 473)
 
+# Blendshape scores used as candidate features (names as emitted by FaceLandmarker).
+BLEND_FEATURE_NAMES = tuple(
+    f"eye{kind}{side}"
+    for kind in ("LookIn", "LookOut", "LookUp", "LookDown", "Blink", "Squint", "Wide")
+    for side in ("Left", "Right")
+)
+FEATURE_SETS = ("iris", "blend", "both")
+
 MIN_OPENNESS = 0.15  # below this the eye is treated as closed (blink)
 
 
@@ -54,3 +62,28 @@ def extract_features(
         return None
     yaw, pitch, roll = head_pose_from_matrix(transform)
     return np.array([rx, ry, lx, ly, yaw, pitch, roll, r_open, l_open])
+
+
+def blend_features(blendshapes: np.ndarray, names: tuple[str, ...]) -> np.ndarray:
+    """Pick BLEND_FEATURE_NAMES out of a (..., 52) blendshape array, in a fixed order."""
+    cols = [names.index(n) for n in BLEND_FEATURE_NAMES]
+    return np.asarray(blendshapes)[..., cols]
+
+
+def assemble(
+    features: np.ndarray, blendshapes: np.ndarray, names: tuple[str, ...], feature_set: str
+) -> np.ndarray:
+    """Build the model input matrix for a feature set from base features and blendshapes.
+
+    - ``iris``: the 9 base features (iris position, head pose, eye openness).
+    - ``blend``: head pose (yaw/pitch/roll) + the blendshape subset, no iris geometry.
+    - ``both``: iris + blendshape subset.
+    """
+    if feature_set == "iris":
+        return features
+    blend = blend_features(blendshapes, names)
+    if feature_set == "blend":
+        return np.concatenate([features[..., 4:7], blend], axis=-1)
+    if feature_set == "both":
+        return np.concatenate([features, blend], axis=-1)
+    raise ValueError(f"unknown feature set {feature_set!r}; choose from {FEATURE_SETS}")

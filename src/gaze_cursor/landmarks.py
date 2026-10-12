@@ -25,6 +25,7 @@ class LandmarkResult:
 
     points: np.ndarray
     transform: np.ndarray  # 4x4 canonical-face -> camera matrix
+    blendshapes: np.ndarray  # (52,) scores in [0, 1], order = FaceTracker.blendshape_names
 
 
 def head_pose_from_matrix(m: np.ndarray) -> tuple[float, float, float]:
@@ -53,10 +54,12 @@ class FaceTracker:
             base_options=mp.tasks.BaseOptions(model_asset_path=str(model_path)),
             running_mode=vision.RunningMode.VIDEO,
             num_faces=1,
+            output_face_blendshapes=True,
             output_facial_transformation_matrixes=True,
         )
         self._landmarker = vision.FaceLandmarker.create_from_options(options)
         self._last_ts = -1
+        self.blendshape_names: tuple[str, ...] = ()  # filled on the first detected face
 
     def process(self, frame: Frame) -> LandmarkResult | None:
         """Run the landmarker on a frame; None if no face is found."""
@@ -70,7 +73,11 @@ class FaceTracker:
             return None
         points = np.array([[p.x, p.y, p.z] for p in result.face_landmarks[0]], dtype=np.float32)
         transform = np.asarray(result.facial_transformation_matrixes[0], dtype=float)
-        return LandmarkResult(points=points, transform=transform)
+        categories = result.face_blendshapes[0]
+        if not self.blendshape_names:
+            self.blendshape_names = tuple(c.category_name for c in categories)
+        blend = np.array([c.score for c in categories], dtype=np.float32)
+        return LandmarkResult(points=points, transform=transform, blendshapes=blend)
 
     def close(self) -> None:
         self._landmarker.close()

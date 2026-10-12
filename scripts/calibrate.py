@@ -1,14 +1,18 @@
 """Fullscreen calibration + held-out test recording. Saves a session to data/sessions/.
 
 SPACE starts, ESC aborts. Look at each dot until it moves. Keep your head fairly still.
+Frames are never mirrored. Screen size/geometry comes from Quartz (macOS points).
+
+`--check-screen` only shows corner/center markers and the detected size, to verify that the
+OpenCV fullscreen window maps 1:1 onto the screen's point coordinates.
 """
 
 from __future__ import annotations
 
+import argparse
 import time
 
 import cv2
-import numpy as np
 
 from gaze_cursor.capture import Camera
 from gaze_cursor.config import ScreenConfig
@@ -23,15 +27,39 @@ RECORD_S = 1.5
 SEED = 0
 
 
+def check_screen(cfg: ScreenConfig) -> None:
+    """Draw markers at the corners and center in point coordinates; ESC/q exits."""
+    with FullscreenCanvas(cfg) as canvas:
+        while True:
+            img = canvas.blank()
+            for x in (0, cfg.width_px - 1):
+                for y in (0, cfg.height_px - 1):
+                    cv2.circle(img, (x, y), 24, (0, 255, 0), 3, cv2.LINE_AA)
+            cv2.drawMarker(img, (cfg.width_px // 2, cfg.height_px // 2), (0, 255, 0),
+                           cv2.MARKER_CROSS, 40, 2)
+            cv2.rectangle(img, (0, 0), (cfg.width_px - 1, cfg.height_px - 1), (0, 255, 0), 1)
+            canvas.text(img, f"{cfg.width_px} x {cfg.height_px} pt  "
+                             f"{cfg.width_cm:.1f} x {cfg.height_cm:.1f} cm  (ESC to exit)")
+            if canvas.show(img) in (27, ord("q")):
+                return
+
+
 def main() -> None:
-    cfg = ScreenConfig()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--check-screen", action="store_true")
+    args = ap.parse_args()
+    cfg = ScreenConfig.from_system()
+    print(f"screen: {cfg}")
+    if args.check_screen:
+        check_screen(cfg)
+        return
     grid = calibration_grid(cfg)
     held_out = held_out_points(cfg, grid, seed=SEED)
     plan = [(CALIB, i, p) for i, p in enumerate(grid)]
     plan += [(TEST, len(grid) + i, p) for i, p in enumerate(held_out)]
     rec = SessionRecorder(meta={
         "screen": cfg.to_dict(), "seed": SEED, "settle_s": SETTLE_S, "record_s": RECORD_S,
-        "mirrored": False, "n_calib": len(grid), "n_test": len(held_out),
+        "mirrored": False, "blendshape_names": [], "n_calib": len(grid), "n_test": len(held_out),
         "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
     })
     with Camera() as cam, FaceTracker() as tracker, FullscreenCanvas(cfg) as canvas:
@@ -63,7 +91,9 @@ def main() -> None:
                     continue
                 h, w = frame.image.shape[:2]
                 feats = extract_features(result.points, result.transform, (w, h))
-                rec.add(frame.timestamp_ms, phase, idx, xy, result.points, result.transform, feats)
+                rec.add(frame.timestamp_ms, phase, idx, xy, result.points, result.transform,
+                        feats, result.blendshapes)
+        rec.meta["blendshape_names"] = list(tracker.blendshape_names)
     path = rec.save()
     print(f"Saved {path}")
 

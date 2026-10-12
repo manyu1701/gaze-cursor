@@ -29,16 +29,17 @@ In the viewer, `q` quits and `s` saves an annotated frame to `debug/`.
 ## Measuring gaze (M1)
 
 ```bash
+uv run scripts/calibrate.py --check-screen   # once: verify the fullscreen window maps onto the screen
 uv run scripts/calibrate.py              # fullscreen: 9 calibration dots, then 12 held-out test dots
 uv run scripts/benchmark.py              # fit on calibration, report error on test dots
 uv run scripts/gaze_overlay.py           # live gaze dot, using the latest session
 ```
 
 - `calibrate.py`: sit about 60 cm away with your head fairly still. `SPACE` starts and `ESC` aborts. The session is saved to `data/sessions/`.
-- `benchmark.py [session.npz] [--model ridge|poly2] [--alpha 1.0]`: runs offline from a recording, with no camera. It prints error (px, cm, degrees; mean and median) and jitter, and appends a row to `data/results.csv`.
-- `gaze_overlay.py [session.npz] [--model ridge|poly2]`: `q` or `ESC` quits.
+- `benchmark.py [session.npz] [--model ridge|poly2] [--alpha 1.0] [--features iris|blend|both]`: runs offline from a recording, with no camera. `iris` is the baseline (iris position, head pose, eye openness); `blend` uses head pose plus the face blendshapes; `both` combines them. It prints error (px, cm, degrees; mean and median) and jitter, and appends a row to `data/results.csv`.
+- `gaze_overlay.py [session.npz] [--model ridge|poly2] [--features iris|blend|both]`: `q` or `ESC` quits.
 
-Screen geometry (logical size, physical size, viewing distance) lives in `src/gaze_cursor/config.py`. Adjust it if you use a different display. The physical size is derived from the nominal diagonal and is accurate to about 1%.
+Screen size (in macOS points) and physical size are read from Quartz at run time, and the viewing distance defaults to 60 cm (`src/gaze_cursor/config.py`). Frames are never mirrored for processing or recording; the viewer flips its display only. Face blendshapes are recorded in every session as candidate features.
 
 ## How it works
 
@@ -49,8 +50,8 @@ capture → landmarks → features → calibration model → smoothing → outpu
 | Stage | Module | What it does |
 | --- | --- | --- |
 | capture | `capture.py` | Webcam frames with monotonic timestamps |
-| landmarks | `landmarks.py` | MediaPipe FaceLandmarker (Tasks API): 478 face and iris points, plus head pose from the transformation matrix |
-| features | `features.py` | Iris position within each eye, head yaw/pitch/roll, eye openness. Pure functions; blink frames are dropped |
+| landmarks | `landmarks.py` | MediaPipe FaceLandmarker (Tasks API): 478 face and iris points, 52 blendshape scores, and head pose from the transformation matrix |
+| features | `features.py` | Iris position within each eye, head yaw/pitch/roll, eye openness, plus an optional blendshape subset. Pure functions; blink frames are dropped |
 | calibration | `calibration.py` | Ridge or polynomial-ridge regression from features to screen (x, y) |
 | smoothing | | One-Euro filter (planned, M2) |
 | output sinks | `sinks/` | On-screen gaze dot today; real cursor from M3 |

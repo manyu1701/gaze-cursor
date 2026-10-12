@@ -45,3 +45,27 @@ def test_extract_features_vector_and_blink() -> None:
     f = extract_features(_face(), np.eye(4), SIZE)
     assert f is not None and f.shape == (len(FEATURE_NAMES),)
     assert extract_features(_face(gap=0.1 * MIN_OPENNESS * 0.5), np.eye(4), SIZE) is None
+
+
+def test_blend_features_selected_by_name_in_fixed_order() -> None:
+    from gaze_cursor.features import BLEND_FEATURE_NAMES, blend_features
+
+    names = tuple(reversed(BLEND_FEATURE_NAMES)) + ("_neutral", "jawOpen")  # arbitrary model order
+    scores = np.arange(len(names), dtype=float)
+    out = blend_features(scores, names)
+    assert out.shape == (len(BLEND_FEATURE_NAMES),)
+    assert out[0] == names.index(BLEND_FEATURE_NAMES[0])
+
+
+def test_assemble_feature_sets() -> None:
+    from gaze_cursor.features import BLEND_FEATURE_NAMES, assemble
+
+    base = np.arange(9, dtype=float)[None, :]
+    blend = np.zeros((1, len(BLEND_FEATURE_NAMES)))
+    nb = len(BLEND_FEATURE_NAMES)
+    assert assemble(base, blend, BLEND_FEATURE_NAMES, "iris").shape == (1, 9)
+    assert assemble(base, blend, BLEND_FEATURE_NAMES, "blend").shape == (1, 3 + nb)
+    assert assemble(base, blend, BLEND_FEATURE_NAMES, "both").shape == (1, 9 + nb)
+    assert assemble(base, blend, BLEND_FEATURE_NAMES, "blend")[0, :3].tolist() == [4, 5, 6]
+    with pytest.raises(ValueError):
+        assemble(base, blend, BLEND_FEATURE_NAMES, "nope")
