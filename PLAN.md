@@ -25,14 +25,21 @@ Each milestone ends with a clear "done when" check. Don't start the next until i
 
 Ordered by what the M1 data says matters most (see PROGRESS.md, "Independent analysis").
 
-1. **Evaluation foundation:** grouped CV by target (leave-one-target-out) and leave-one-session-out; bootstrap CIs over targets; paired model comparisons; per-target bias vs spread report; screen error heatmap. Tune ridge alpha with grouped CV (alpha ~100 already beat alpha 1 on held-out targets).
-2. **Calibration redesign:** more targets (16-25) that reach close to the safe screen edges (no extrapolation at test time); shorter recording per target (~1 s; error rises after ~1.2 s); randomized order.
+**Status (2026-10-13):** steps 1 and 2 are **done**. The pre-registered H1 test (richer pose-free features beat iris-only across sessions) was run once and is **not supported** (paired gain +0.12 deg, 95% CI [-0.43, +0.67]). *Exploratory, found afterwards:* lighting dominates the error (dim 7.3-9 deg even trained on itself; front-lit 1.3-1.7 deg with its own calibration but 5.3 deg when trained on a pool from other lighting); model-variant differences (0.1-0.6 deg) are small next to that. Step 2b follows from this.
+
+1. **DONE. Evaluation foundation:** grouped CV by target (leave-one-target-out) and leave-one-session-out; bootstrap CIs over targets; paired model comparisons; per-target bias vs spread report; screen error heatmap. Tune ridge alpha with grouped CV (alpha ~100 already beat alpha 1 on held-out targets).
+2. **DONE. Calibration redesign:** more targets (16-25) that reach close to the safe screen edges (no extrapolation at test time); shorter recording per target (~1 s; error rises after ~1.2 s); randomized order.
+2b. **Lighting and replayable images** (pre-registered round 2: H2, H3).
+   - **Replayable images:** for every frame in new sessions save a native-resolution face crop (JPEG, local only, gitignored, size estimate per session) so image-level fixes and pretrained gaze models can be tested offline on recorded data.
+   - **Lighting gate:** a data-based minimum face brightness (proposed 60/255; recommended 100) in the setup checklist with clear front-light guidance; the U override stays.
+   - **Pre-registered round 2:** H2 = calibrating in the lighting you will use beats a pool recorded in other lighting; H3 = sessions that pass the brightness gate are more accurate than sessions below it. Smallest design: 4 new sessions (front-lit, backlit, 2 dim) plus 2 existing sessions reused as training twins. Protocol and success criteria are written in PROGRESS.md before anything is recorded.
 3. **Fix the vertical bias:** top-of-screen targets are predicted far too low. Try separate x/y models, regularized nonlinear terms for y, Gaussian Process regression (also gives per-point uncertainty), and better vertical features (eyelid/blendshape-based). **Preferred direction: a 3D gaze ray (eye position from iris-size distance + head pose, gaze direction) intersected with the screen plane**: it fixes head-pose sensitivity and is the foundation for M5.
 4. **Multi-session dataset:** record sessions across lighting, posture, glasses, time of day; train on some, test on others. Cross-session error is the headline metric.
 5. **Robustness to outliers:** blink/outlier rejection and robust regression (Huber/RANSAC); handle the heavy tail (mean >> median).
 6. **Temporal model:** fixation/saccade classification (velocity threshold first, HMM later) and One-Euro smoothing tuned per state; measure jitter vs lag and end-to-end latency.
 7. **Active calibration (stretch):** pick the next calibration point where GP uncertainty is highest; fewer points for the same accuracy.
 8. **Transfer learning (stretch):** pretrained gaze model (e.g. L2CS-Net via Hugging Face) as a prior; personal calibration learns a small correction.
+9. **Calibration-cost curve (later; depends on step 1, and on step 8 and the saved face images from step 2b for its zero-dot arm):** held-out error vs number of calibration dots for (i) a zero-dot pretrained gaze model, (ii) zero-dot pooled own earlier sessions (train on other sessions, no dots for the new one), and (iii) 1/3/5/9/25-dot calibration on the new session (nested subsets of the v2 targets chosen by farthest-point sampling, repeated over seeds), tested on held-out targets, with bootstrap CIs and a per-lighting breakdown. Answers: how many dots are really needed, and can a pretrained or pooled start replace them?
 
 **Done when:** a results table with CIs shows, on held-out targets *and* held-out sessions, which changes improved accuracy and by how much (the portfolio write-up starts here).
 
