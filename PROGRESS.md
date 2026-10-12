@@ -17,6 +17,8 @@ Read this first in a new session, then `CLAUDE.md` and `PLAN.md`. Update it at t
 | `session_20261013_025905` | [0,0,1470,956] | yes | first unbiased session |
 | `session_20261013_030424` | [0,0,1470,956] | yes | |
 | `session_20261013_030654` | [0,0,1470,956] | yes | recalibrated in the same posture |
+| `session_20261013_032121` | [0,0,1470,956] | n/a | v2 dry run, EXCLUDED (moved to `data/dry_runs/`) |
+| `session_20261013_033128` | [0,0,1470,956] | yes | **v2 confirmatory session 1 of 3**, note "backlit ambient, face~78 bg~146" (camera: face 78/255, background 146, eyes ~60, L/R 0.95, tracked 120/120 frames) |
 
 **Clean** means window `[0,0,1470,956]` (borderless NSWindow, 1:1 with screen points). By session start times (02:58 to 03:06) all three clean sessions were recorded within minutes of each other in the same room, so they do not yet cover different lighting, posture or times of day. Layout v1: 9 calibration + 12 held-out targets.
 
@@ -70,6 +72,7 @@ Numpy ridge, held-out 12 targets, mean deg per session (025905 / 030424 / 030654
 - Known design limits: LOSO tests all 21 v1 targets, including the grid targets that sit near the training pool's edge; within-session numbers use 12 test targets per session, so CIs are wide; three sessions give weak session-level inference (hence the two-level bootstrap column in the paired report).
 
 ## Pre-registration log (decisions made after the pre-registration, before any v2 result was seen)
+- **2026-10-13, v2 session 1 recorded** (`session_20261013_033128`, backlit ambient). Integrity only: 25 targets (16 calibration + 9 held-out), 757 frames, 100% valid, 29-31 frames per target, all targets safe. Posture matched the earlier sessions (inter-iris 83.9 px vs 77-87; mean pitch -6.3 deg vs -6 to -8.5). No model was fitted to it. Planned conditions for sessions 2 and 3 (suggested targets, not criteria): front-lit (face brighter than background, face >= ~120) and dim/screen-only (face ~40-60, tracking must hold); same lid angle and seat position.
 - **2026-10-13, dry run excluded.** Abhimanyu's dry run of `calibrate.py` (`session_20261013_032121`, layout v2, no `--note`, recorded 03:21 in the same room and hour as the M1 sessions) satisfied the inclusion rule. Only integrity was checked (25 targets, 760 frames, 100% valid, random order, edges reached, all targets safe); no model was fitted to it. Decision (Abhimanyu): exclude it as a dry run, because it was not a deliberate condition and would add nothing to the different-times/lighting test. Moved to `data/dry_runs/` (gitignored), so the harness cannot count it. Three fresh v2 sessions are still required.
 - **Clarification of the written protocol (implementation detail, no change to the hypothesis or criterion):** `evaluate.py --preregistered` holds out the earliest 3 clean v2 sessions with >= 80% valid frames and ignores any extra v2 sessions entirely (they are also kept out of the training pool), so the confirmatory result cannot change as more data arrives.
 
