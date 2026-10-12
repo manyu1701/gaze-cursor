@@ -56,13 +56,15 @@ def _make_window_class():
 class FullscreenCanvas:
     """Borderless fullscreen window drawn 1:1 in screen points. ``origin`` is its top-left."""
 
-    def __init__(self, cfg: ScreenConfig, name: str = "gaze-cursor") -> None:
+    def __init__(self, cfg: ScreenConfig, name: str = "gaze-cursor", alpha: float = 1.0) -> None:
         self.cfg = cfg
         self.name = name
+        self.alpha = alpha  # < 1 only for tests/diagnostics
         self.origin = (0, 0)
         self.size = (cfg.width_px, cfg.height_px)  # (w, h) of the drawable area
         self._window = None
         self._app = None
+        self._cursor_hidden: bool | None = None
 
     def __enter__(self) -> FullscreenCanvas:
         import AppKit
@@ -79,13 +81,15 @@ class FullscreenCanvas:
         win.setOpaque_(True)
         win.setBackgroundColor_(AppKit.NSColor.blackColor())
         win.setHasShadow_(False)
+        win.setAlphaValue_(self.alpha)
         win.contentView().setWantsLayer_(True)
         win.makeKeyAndOrderFront_(None)
-        self._app.activateIgnoringOtherApps_(True)
-        AppKit.NSCursor.hide()
         self._window = win
+        self._activate()
         for _ in range(10):  # let the window appear, then read its real bounds
             self.show(self.blank())
+        self._cursor_hidden = None
+        self._sync_cursor()
         bounds = own_window_bounds()
         if bounds:
             self.origin = (bounds[0], bounds[1])
@@ -95,15 +99,48 @@ class FullscreenCanvas:
             print("warning: could not read the window bounds; assuming the full screen")
         return self
 
+    def _activate(self) -> None:
+        """Ask macOS to make this process the active app. From a terminal this can be refused
+        (recent macOS only lets the frontmost app yield focus), so callers must not rely on it."""
+        import AppKit
+
+        if hasattr(self._app, "activate"):
+            self._app.activate()
+        self._app.activateIgnoringOtherApps_(True)
+        AppKit.NSRunningApplication.currentApplication().activateWithOptions_(
+            AppKit.NSApplicationActivateIgnoringOtherApps)
+        self._window.makeKeyAndOrderFront_(None)
+
+    @property
+    def has_focus(self) -> bool:
+        """True if key presses will reach this window (otherwise they go to the Terminal)."""
+        return bool(self._app.isActive() and self._window.isKeyWindow())
+
+    def _sync_cursor(self) -> None:
+        """Hide the mouse pointer only while we have focus; show it when the user must click."""
+        import AppKit
+
+        hide = self.has_focus
+        if hide != self._cursor_hidden:
+            (AppKit.NSCursor.hide if hide else AppKit.NSCursor.unhide)()
+            self._cursor_hidden = hide
+
     def __exit__(self, *exc: object) -> None:
         import AppKit
 
-        AppKit.NSCursor.unhide()
+        if self._cursor_hidden:
+            AppKit.NSCursor.unhide()
         if self._window is not None:
             self._window.orderOut_(None)
             self._window.close()
             self._window = None
         self._pump()
+
+    @property
+    def safe_top(self) -> int:
+        """First canvas row below the menu-bar/notch strip (plus a margin). The window covers the
+        whole display, so anything drawn above this can be hidden behind the camera notch."""
+        return int(self.cfg.top_inset_pt) + 14
 
     def blank(self) -> np.ndarray:
         return np.full((self.size[1], self.size[0], 3), 24, np.uint8)
@@ -142,6 +179,16 @@ class FullscreenCanvas:
         """Display ``img`` (BGR, canvas-sized) and return the key pressed (-1 if none)."""
         import Quartz
 
+        self._frames = getattr(self, "_frames", 0) + 1
+        if self._frames % 15 == 0:  # about twice a second
+            self._sync_cursor()
+        if not self._window.isKeyWindow() or not self._app.isActive():
+            if self._frames % 15 == 0:
+                self._activate()
+            img = img.copy()
+            cv2.rectangle(img, (0, self.size[1] - 110), (self.size[0], self.size[1] - 50), (0, 90, 140), -1)
+            self.text(img, "Keys are not reaching this window: click anywhere on the screen once",
+                      y=self.size[1] - 72)
         rgba = np.ascontiguousarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGBA))
         h, w = rgba.shape[:2]
         provider = Quartz.CGDataProviderCreateWithData(None, rgba.tobytes(), rgba.nbytes, None)

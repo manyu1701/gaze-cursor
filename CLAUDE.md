@@ -65,6 +65,16 @@ models/            downloaded model files e.g. face_landmarker.task (gitignored)
 - **Comparisons are paired and come with uncertainty:** compare models on the same targets (paired differences), report bootstrap CIs (resample targets, not frames) and effect sizes, not just a single mean.
 - Use mean, median and p90 error; a mean far above the median means heavy-tailed outliers worth handling explicitly (robust losses, outlier/blink rejection).
 
+## Generalisation readiness (future M5; keep these now)
+
+Long term the tracker should work with other webcams, extra/external screens, other people, lighting and OSes. The current 2D "iris -> this screen" mapping silently bakes in this exact camera, screen, distance and person, so:
+
+- **Structured condition tags on every session** (in `meta`, not only the free-text `--note`): camera (name, resolution, built-in/external), screen layout (displays, sizes in points and cm, arrangement from macOS), estimated face distance, lighting (`day` / `lamp` / `dark` / `backlit`), glasses (yes/no), posture note, person id (`p01`...). Untagged sessions can't answer "does it work in condition X?" later.
+- **Prefer geometric representations:** for M2 step 3, aim for a 3D gaze ray (eye position in camera space + gaze direction) intersected with a screen plane, rather than only a richer 2D regression. Face distance can be estimated monocularly from iris size (human iris diameter ~11.7 mm). This is also the proper fix for head-pose sensitivity, and multi-monitor becomes "several planes".
+- **Keep the three parts separable:** person -> gaze direction (learnable across people), camera geometry (per camera), screen geometry (per layout). Never hard-code camera or screen values; everything comes from config / the OS / calibration.
+- **OS-specific code stays in sinks / platform modules** (cursor control, screen geometry, overlay window); the core pipeline stays portable Python.
+- Face recordings are personal data: other people's sessions need consent, stay local and gitignored.
+
 ## Conventions
 
 - Typed Python, small pure functions where possible, docstrings on public functions.
@@ -78,3 +88,4 @@ models/            downloaded model files e.g. face_landmarker.task (gitignored)
 - Pretrained appearance-based gaze models (e.g. L2CS-Net) and gaze datasets (MPIIGaze, GazeCapture) at M2 (via Hugging Face MCP).
 - Intent / target selection at M4: local probabilistic model first; optionally benchmark TypeSafe's Jev as an experiment.
 - Packaging as a proper Mac app (possibly Swift) only after M3 proves value.
+- Generalisation (M5): external webcams, multi-monitor, other people, other OSes. See "Generalisation readiness".

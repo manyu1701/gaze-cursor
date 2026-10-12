@@ -106,7 +106,7 @@ def main() -> None:
                 canvas.text(img, "Sit ~60 cm away, head still. Press SPACE to start, ESC to abort.")
                 key = canvas.show(img)
                 cam.read()
-                if key == 27:
+                if key in (27, ord("q")):
                     return
                 if key == 32:
                     break
@@ -116,7 +116,7 @@ def main() -> None:
                 frame = cam.read()
                 img = canvas.blank()
                 canvas.dot(img, xy, color=(255, 255, 255) if elapsed < SETTLE_S else (0, 255, 0))
-                canvas.text(img, f"{n + 1}/{len(plan)}", y=40)  # y: canvas pixels
+                canvas.text(img, f"{n + 1}/{len(plan)}", y=canvas.safe_top + 26)  # below the notch
                 if canvas.show(img) == 27:
                     print("Aborted; nothing saved.")
                     return

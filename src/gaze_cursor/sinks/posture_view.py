@@ -55,11 +55,12 @@ def draw_check(canvas: FullscreenCanvas, frame: np.ndarray | None, metrics: dict
         else:
             m, _lv, _z = ref.worst(metrics)
             status, color = f"Adjust {LABELS[m]}: {ref.hint(m, metrics[m])}", _LEVEL_COLOR[level_all]
-    canvas.text(img, title, y=30)
-    cv2.putText(img, status, (max((W - cv2.getTextSize(status, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)[0][0]) // 2, 10), 75),
+    top = canvas.safe_top  # everything starts below the notch strip
+    canvas.text(img, title, y=top + 26)
+    cv2.putText(img, status, (max((W - cv2.getTextSize(status, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)[0][0]) // 2, 10), top + 66),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv2.LINE_AA)
     # Mirrored preview (display only; the tracker always sees the unflipped frame).
-    px, py = (W - PREVIEW[0]) // 2, 100
+    px, py = (W - PREVIEW[0]) // 2, top + 90
     if frame is not None:
         img[py:py + PREVIEW[1], px:px + PREVIEW[0]] = cv2.resize(cv2.flip(frame, 1), PREVIEW)
     cv2.rectangle(img, (px - 3, py - 3), (px + PREVIEW[0] + 3, py + PREVIEW[1] + 3), color, 3)
@@ -83,7 +84,7 @@ def draw_check(canvas: FullscreenCanvas, frame: np.ndarray | None, metrics: dict
         _put(img, f"Light (informational): face {lighting['face']:.0f}/255, background "
                   f"{lighting['background']:.0f}" + (f"  WARNING: {warn}" if warn else ""),
              (bar_x - 250, y + 20), AMBER if warn else (170, 170, 170))
-    _put(img, f"Reference: {ref.n_sessions} recorded session(s). SPACE: continue   ESC: cancel",
+    _put(img, f"Reference: {ref.n_sessions} recorded session(s). SPACE: continue   ESC or Q: cancel",
          (bar_x - 250, canvas.size[1] - 25), (150, 150, 150), 0.5)
     return img
 
@@ -108,7 +109,7 @@ def run_posture_check(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanva
         all_good = metrics is not None and ref.worst(metrics)[1] == "good"
         gate.update(time.monotonic(), all_good)
         key = canvas.show(draw_check(canvas, frame.image, metrics, ref, gate.in_position, lighting, title))
-        if key == 27:
+        if key in (27, ord("q")):
             return PostureResult(False, gate.in_position)
         if key == 32:
             return PostureResult(True, gate.in_position)
@@ -118,10 +119,10 @@ def draw_chip(canvas: FullscreenCanvas, img: np.ndarray, ref: Reference,
               metrics: dict[str, float] | None) -> None:
     """Small live posture status in the top-left corner (used while the overlay runs)."""
     if metrics is None:
-        _put(img, "posture: no face", (20, 30), RED)
+        _put(img, "posture: no face", (20, canvas.safe_top + 22), RED)
         return
     m, level, _z = ref.worst(metrics)
     if level == "good":
-        _put(img, "posture: OK", (20, 30), GREEN)
+        _put(img, "posture: OK", (20, canvas.safe_top + 22), GREEN)
     else:
-        _put(img, f"posture: adjust {LABELS[m]} ({ref.hint(m, metrics[m])})", (20, 30), _LEVEL_COLOR[level])
+        _put(img, f"posture: adjust {LABELS[m]} ({ref.hint(m, metrics[m])})", (20, canvas.safe_top + 22), _LEVEL_COLOR[level])

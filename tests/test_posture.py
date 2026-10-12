@@ -90,3 +90,20 @@ def test_lighting_stats_and_warning() -> None:
     assert st["ratio"] == pytest.approx(0.4, abs=0.05) and lighting_warning(st) is None
     gray[30:70, 30:70] = 20
     assert lighting_warning(lighting_stats(gray, pts)) == "very dark: tracking may fail"
+
+
+def test_check_screen_keeps_the_notch_strip_clear() -> None:
+    from gaze_cursor.config import ScreenConfig
+    from gaze_cursor.sinks.overlay import FullscreenCanvas
+    from gaze_cursor.sinks.posture_view import draw_check
+
+    cfg = ScreenConfig()                                   # notch strip: top 32 pt, x 646..825
+    canvas = FullscreenCanvas(cfg)
+    ref = _ref()
+    frame = np.full((720, 1280, 3), 120, np.uint8)
+    live = {"pitch": -1.2, "yaw": 0.0, "roll": 0.0, "distance": 0.07, "x": 0.5, "y": 0.55}
+    for metrics, lit in ((live, True), (None, False)):
+        img = draw_check(canvas, frame, metrics, ref, False,
+                         {"face": 70.0, "background": 140.0, "ratio": 0.5, "clipped": 0.0} if lit else None,
+                         "Sit as you did in the earlier sessions, then press SPACE")
+        assert (img[: int(cfg.top_inset_pt) + 2] == canvas.blank()[: int(cfg.top_inset_pt) + 2]).all()
