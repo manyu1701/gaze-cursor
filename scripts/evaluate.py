@@ -38,6 +38,15 @@ def short(name: str) -> str:
     return name.removeprefix("session_").removesuffix(".npz")
 
 
+def session_conditions(s) -> str:
+    """One line: layout, note, captured lighting and posture check, if the session recorded them."""
+    li, pc = s.meta.get("lighting"), s.meta.get("posture_check") or {}
+    light = f"lighting {li['label']} (face {li['face']:.0f}, bg {li['background']:.0f})" if li else "lighting not captured"
+    pos = f", position {pc['mode']}" if pc.get("mode") else ""
+    note = f', note "{s.meta["note"]}"' if s.meta.get("note") else ""
+    return f"{short(s.path.name)}: layout {s.layout}, {light}{pos}{note}"
+
+
 def row_for(cfg: Config, mode: str, t: TargetStats, screen, sessions, args, confirmatory: int,
             note: str = "") -> dict:
     s = summarize(t, screen)
@@ -87,6 +96,8 @@ def run_exploratory(args: argparse.Namespace) -> int:
         return 1
     names = tuple(s.path.name for s in sessions)
     print(f"{len(sessions)} sessions: {', '.join(short(n) for n in names)}  (exploratory)")
+    for s in sessions:
+        print("  " + session_conditions(s))
     screen = common_screen(sessions)
     wanted = list(args.configs)
     if args.compare:
@@ -153,6 +164,8 @@ def run_preregistered(args: argparse.Namespace) -> int:
     print(f"Pre-registered H1: {PREREG_CANDIDATE} beats {PREREG_REFERENCE} (leave-one-session-out)")
     print(f"held-out v2: {', '.join(short(s.path.name) for s in held)}; "
           f"training pool also includes {len(pool)} older clean session(s)")
+    for s in held:
+        print("  " + session_conditions(s))
     res = {c.name: evaluate(datasets, c, "losos", screen, held_idx) for c in configs}
     table, log_rows = [], []
     for c in configs:

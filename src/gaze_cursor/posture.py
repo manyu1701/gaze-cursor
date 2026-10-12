@@ -63,6 +63,31 @@ def lighting_warning(stats: dict[str, float]) -> str | None:
     return None
 
 
+def lighting_label(face: float, background: float) -> str:
+    """A coarse, human-readable lighting class. Heuristic thresholds, not measured limits."""
+    ratio = face / background if background else float("nan")
+    if face < 50:
+        return "dim"
+    if ratio < 0.6:
+        return "backlit"
+    if ratio >= 0.9 and face >= 100:
+        return "front-lit"
+    return "mixed"
+
+
+def summarize_lighting(frames: Sequence[dict[str, float]]) -> dict | None:
+    """Session-level lighting from per-frame ``lighting_stats`` (JSON-storable), or None."""
+    if not frames:
+        return None
+    face = np.array([f["face"] for f in frames])
+    bg = np.array([f["background"] for f in frames])
+    clipped = np.array([f["clipped"] for f in frames])
+    return {"face": float(face.mean()), "background": float(bg.mean()),
+            "ratio": float(face.mean() / bg.mean()), "face_std": float(face.std()),
+            "clipped": float(clipped.mean()), "frames": len(frames),
+            "label": lighting_label(float(face.mean()), float(bg.mean()))}
+
+
 @dataclass(frozen=True)
 class Reference:
     """Where the user sat in the reference sessions: per-metric center and tolerance scale."""
@@ -105,6 +130,15 @@ class Reference:
                                n_frames=len(cols["pitch"]),
                                session_names=tuple(s.path.name for s in sessions))
 
+    @classmethod
+    def from_current(cls, frames: Sequence[dict[str, float]]) -> Reference:
+        """A reference built from the user's current posture (a short window of recent frames), for
+        calibrating in their own setup instead of matching earlier sessions."""
+        if len(frames) < STILL_MIN_FRAMES:
+            raise ValueError("not enough frames to take the current posture as a reference")
+        return cls.from_arrays({m: np.array([f[m] for f in frames]) for m in METRICS},
+                               n_sessions=0, n_frames=len(frames), session_names=("current setup",))
+
     def z(self, metrics: dict[str, float]) -> dict[str, float]:
         return {m: (metrics[m] - self.center[m]) / self.scale[m] for m in METRICS}
 
@@ -125,7 +159,7 @@ class Reference:
         if metric == "distance":
             return "move back a little" if d > 0 else "move closer"
         if metric == "pitch":
-            return f"{live:+.0f} deg, usually {self.center[metric]:+.0f}: adjust screen angle or seat height"
+            return "adjust screen angle or seat height"
         if metric == "yaw":
             return "face the screen centre"
         if metric == "roll":
@@ -183,3 +217,103 @@ def summarize_recording(ref: Reference, frames: Sequence[dict[str, float]]) -> d
         verdict = f"you drifted out of position ({LABELS[worst]} most); consider recording again"
     return {"frames": len(frames), "fraction_good": frac_good, "verdict": verdict,
             "worst_metric": worst, "not_good_fraction": per_metric, "mean_z": mean_z}
+
+
+# --- Live setup checklist -------------------------------------------------------------------
+# Head-pose and face-position jitter within one ~1 s fixation in the recorded sessions had p95
+# std of about pitch 0.69 deg, yaw 0.48, roll 0.37, distance 0.0008, x 0.0015, y 0.0008. The
+# "still" limits are about twice that, so ordinary fixations pass and moving around does not.
+STILL_LIMITS = {"pitch": 1.0, "yaw": 0.8, "roll": 0.6, "distance": 0.0016, "x": 0.003, "y": 0.002}
+STILL_MIN_FRAMES = 20
+LIGHT_MIN_FACE = 35.0  # below this tracking may fail (same threshold as lighting_warning)
+
+
+@dataclass(frozen=True)
+class CheckItem:
+    """One live setup step. ``level``: good / adjust / off (measured), ``unknown`` (nothing to
+    compare against; never blocks) or ``wait`` (still measuring; blocks until it resolves)."""
+
+    key: str
+    title: str
+    howto: str
+    level: str
+    detail: str
+    hint: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.level == "good"
+
+
+def still_status(window: Sequence[dict[str, float]]) -> tuple[str, str]:
+    """(level, detail) for head stillness over a window of recent per-frame metrics."""
+    if len(window) < STILL_MIN_FRAMES:
+        return "wait", "measuring..."
+    over = {m: float(np.std([f[m] for f in window])) / STILL_LIMITS[m] for m in METRICS}
+    worst = max(over, key=over.get)
+    if over[worst] <= 1.0:
+        return "good", "steady"
+    return ("adjust" if over[worst] <= 2.0 else "off"), f"moving ({LABELS[worst]})"
+
+
+LIGHT_CHANGE_TOLERANCE = 0.35  # relative face-brightness change vs the calibration that triggers a hint
+
+
+def build_checklist(ref: Reference | None, metrics: dict[str, float] | None,
+                    window: Sequence[dict[str, float]], lighting: dict[str, float] | None,
+                    ref_lighting: dict | None = None) -> list[CheckItem]:
+    """The five live setup steps, each with a measured status and, when not good, a hint.
+
+    Chair contact and arm's length cannot be sensed by a webcam: they are checked indirectly
+    through distance and stillness, and the on-screen text says so. Without a reference (the very
+    first session) the position steps are ``unknown`` and do not block.
+    """
+    def pos(keys: tuple[str, ...], fmt) -> tuple[str, str, str]:
+        if ref is None:
+            return "unknown", "no earlier session to compare with", ""
+        if metrics is None:
+            return "off", "no face detected", "look at the camera"
+        z = ref.z(metrics)
+        worst = max(keys, key=lambda k: abs(z[k]))
+        level = ref.level(z[worst])
+        return level, fmt(metrics, ref), ("" if level == "good" else ref.hint(worst, metrics[worst]))
+
+    d_lvl, d_txt, d_hint = pos(("distance",), lambda m, r: f"distance {m['distance'] * 100:.1f}% (usual {r.center['distance'] * 100:.1f}%)")
+    p_lvl, p_txt, p_hint = pos(("pitch",), lambda m, r: f"head pitch {m['pitch']:+.1f} deg (usual {r.center['pitch']:+.1f})")
+    f_lvl, f_txt, f_hint = pos(("yaw", "roll", "x", "y"), lambda m, r: f"yaw {m['yaw']:+.1f}, roll {m['roll']:+.1f} deg, face {'centred' if abs(m['x'] - r.center['x']) < 2 * r.scale['x'] and abs(m['y'] - r.center['y']) < 2 * r.scale['y'] else 'off-centre'}")
+    if lighting is None:
+        l_lvl, l_txt, l_hint = "off", "no face detected", "look at the camera"
+    else:
+        l_txt = f"face {lighting['face']:.0f}/255, background {lighting['background']:.0f}"
+        if lighting["face"] < LIGHT_MIN_FACE:
+            l_lvl, l_hint = "off", "more light on your face (tracking may fail)"
+        elif lighting["face"] > 220 or lighting["clipped"] > 0.05:
+            l_lvl, l_hint = "off", "face overexposed: reduce glare or light"
+        else:
+            l_lvl, l_hint = "good", ""
+            if ref_lighting and ref_lighting.get("face"):
+                change = (lighting["face"] - ref_lighting["face"]) / ref_lighting["face"]
+                if abs(change) > LIGHT_CHANGE_TOLERANCE:
+                    l_lvl = "adjust"
+                    l_hint = (f"lighting differs from calibration (face was {ref_lighting['face']:.0f}, "
+                              f"{ref_lighting.get('label', '')}): match it or recalibrate")
+    s_lvl, s_txt = still_status(window)
+    return [
+        CheckItem("distance", "Sit all the way back, arm's length from the screen",
+                  "Back against the chair; stretch out your arm and your fingertips should just reach the screen. "
+                  "I can only check your distance, not the chair.", d_lvl, d_txt, d_hint),
+        CheckItem("pitch", "Laptop on a stable desk, lid at the usual angle",
+                  "Not on your lap. The angle shows up as your head pitch.", p_lvl, p_txt, p_hint),
+        CheckItem("facing", "Face the screen squarely",
+                  "Head level, shoulders relaxed, chin neither up nor down.", f_lvl, f_txt, f_hint),
+        CheckItem("light", "Light on your face",
+                  "No bright window or lamp behind you; avoid glare on glasses.", l_lvl, l_txt, l_hint),
+        CheckItem("still", "Keep your head still, move only your eyes",
+                  "Blink normally; this turns green once you hold still for a moment.", s_lvl, s_txt,
+                  "" if s_lvl in ("good", "wait") else "hold still"),
+    ]
+
+
+def checklist_ready(items: Sequence[CheckItem]) -> bool:
+    """Ready when every measured step is good (unknown steps never block)."""
+    return all(i.level in ("good", "unknown") for i in items) and any(i.level == "good" for i in items)

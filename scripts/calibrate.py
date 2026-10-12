@@ -20,8 +20,11 @@ from gaze_cursor.eval.session import SessionRecorder, clean_sessions
 from gaze_cursor.eval.targets import build_plan
 from gaze_cursor.features import extract_features
 from gaze_cursor.landmarks import FaceTracker
-from gaze_cursor.posture import Reference, posture_metrics, summarize_recording
-from gaze_cursor.sinks.guide_view import draw_instructions, draw_summary, wait_for_key
+import cv2
+
+from gaze_cursor.posture import (
+    Reference, lighting_stats, posture_metrics, summarize_lighting, summarize_recording)
+from gaze_cursor.sinks.guide_view import draw_summary, wait_for_key
 from gaze_cursor.sinks.overlay import FullscreenCanvas
 from gaze_cursor.sinks.posture_view import run_posture_check
 
@@ -88,25 +91,27 @@ def main() -> None:
         "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
     })
     posture_log: list[dict[str, float]] = []
+    light_log: list[dict[str, float]] = []   # lighting is captured from the recorded frames themselves
     with Camera() as cam, FaceTracker() as tracker, FullscreenCanvas(cfg) as canvas:
         rec.meta["window"] = [*canvas.origin, *canvas.size]
         hidden = [p for _, _, p in plan if not canvas.visible(p)]
         if hidden:
             raise SystemExit(f"{len(hidden)} targets fall outside the visible window {rec.meta['window']}")
         earlier = [] if args.no_check else clean_sessions()
-        if not args.no_check and not wait_for_key(canvas, lambda: draw_instructions(canvas),
-                                                  (32,), cancel=(27, ord("q"))):
-            return
-        ref = None
-        if earlier:  # sit like in the earlier sessions, so sessions stay comparable
-            ref = Reference.from_sessions(earlier)
-            check = run_posture_check(cam, tracker, canvas, ref,
-                                      title="Sit as you did in the earlier sessions, then press SPACE")
+        ref = Reference.from_sessions(earlier) if earlier else None
+        if not args.no_check:
+            # Live checklist: each setup step turns green as it is satisfied (first session: no
+            # earlier sessions to compare position against, so only light and stillness are checked).
+            check = run_posture_check(cam, tracker, canvas, ref)
             if not check.proceed:
                 return
-            rec.meta["posture_check"] = {"in_position": check.in_position,
-                                         "reference_sessions": ref.n_sessions}
-        else:  # first ever session, or --no-check
+            if check.own_setup:  # the user chose to calibrate in their current setup: nothing forced
+                ref = check.reference
+            rec.meta["posture_check"] = {
+                "mode": "own_setup" if check.own_setup else "earlier_sessions" if ref else "no_reference",
+                "in_position": check.in_position, "reference_sessions": ref.n_sessions if ref else 0,
+                "reference": {m: ref.center[m] for m in ref.center} if ref else None}
+        else:
             while True:
                 img = canvas.blank()
                 canvas.text(img, "Sit ~60 cm away, head still. Press SPACE to start, ESC to abort.")
@@ -134,6 +139,7 @@ def main() -> None:
                     continue
                 h, w = frame.image.shape[:2]
                 rec.meta["image_size"] = [w, h]
+                light_log.append(lighting_stats(cv2.cvtColor(frame.image, cv2.COLOR_BGR2GRAY), result.points))
                 if ref is not None:
                     posture_log.append(posture_metrics(result.points, result.transform, (w, h)))
                 feats = extract_features(result.points, result.transform, (w, h))
@@ -143,11 +149,17 @@ def main() -> None:
         summary = summarize_recording(ref, posture_log) if ref is not None else None
         if summary is not None:
             rec.meta["posture_summary"] = summary
+        lighting = summarize_lighting(light_log)
+        if lighting is not None:
+            rec.meta["lighting"] = lighting
         path = rec.save()
         print(f"Saved {path}")
+        if lighting is not None:
+            print(f"lighting: {lighting['label']} (face {lighting['face']:.0f}/255, background "
+                  f"{lighting['background']:.0f}, ratio {lighting['ratio']:.2f}, clipped {lighting['clipped'] * 100:.1f}%)")
         if summary is not None:
             print(f"posture: in position for {summary['fraction_good'] * 100:.0f}% of frames - {summary['verdict']}")
-            wait_for_key(canvas, lambda: draw_summary(canvas, summary, path.name), (32, 27, ord("q")))
+        wait_for_key(canvas, lambda: draw_summary(canvas, summary, path.name, lighting), (32, 27, ord("q")))
     return
 
 

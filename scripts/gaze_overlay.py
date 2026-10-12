@@ -51,7 +51,8 @@ def main() -> None:
     with Camera() as cam, FaceTracker() as tracker, FullscreenCanvas(cfg) as canvas:
         if ref is not None:
             check = run_posture_check(cam, tracker, canvas, ref,
-                                      title="Sit as you did when you calibrated this model")
+                                      title="Sit as you did when you calibrated this model",
+                                      ref_lighting=session.meta.get("lighting"))
             if not check.proceed:
                 return
         metrics = None

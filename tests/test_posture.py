@@ -92,23 +92,6 @@ def test_lighting_stats_and_warning() -> None:
     assert lighting_warning(lighting_stats(gray, pts)) == "very dark: tracking may fail"
 
 
-def test_check_screen_keeps_the_notch_strip_clear() -> None:
-    from gaze_cursor.config import ScreenConfig
-    from gaze_cursor.sinks.overlay import FullscreenCanvas
-    from gaze_cursor.sinks.posture_view import draw_check
-
-    cfg = ScreenConfig()                                   # notch strip: top 32 pt, x 646..825
-    canvas = FullscreenCanvas(cfg)
-    ref = _ref()
-    frame = np.full((720, 1280, 3), 120, np.uint8)
-    live = {"pitch": -1.2, "yaw": 0.0, "roll": 0.0, "distance": 0.07, "x": 0.5, "y": 0.55}
-    for metrics, lit in ((live, True), (None, False)):
-        img = draw_check(canvas, frame, metrics, ref, False,
-                         {"face": 70.0, "background": 140.0, "ratio": 0.5, "clipped": 0.0} if lit else None,
-                         "Sit as you did in the earlier sessions, then press SPACE")
-        assert (img[: int(cfg.top_inset_pt) + 2] == canvas.blank()[: int(cfg.top_inset_pt) + 2]).all()
-
-
 def _frames(n: int, **shift: float) -> list[dict[str, float]]:
     base = {"pitch": -7.0, "yaw": 0.0, "roll": 0.0, "distance": 0.066, "x": 0.5, "y": 0.55}
     return [{**base, **shift} for _ in range(n)]
@@ -140,19 +123,146 @@ def test_recording_summary_without_frames() -> None:
     assert summarize_recording(_ref(), [])["frames"] == 0
 
 
-def test_guide_screens_keep_the_notch_strip_clear() -> None:
+def _m(**kw: float) -> dict[str, float]:
+    return {**{"pitch": -7.0, "yaw": 0.0, "roll": 0.0, "distance": 0.066, "x": 0.5, "y": 0.55}, **kw}
+
+
+STILL = [_m() for _ in range(45)]
+LIGHT_OK = {"face": 90.0, "background": 140.0, "ratio": 0.64, "clipped": 0.0}
+
+
+def _levels(items) -> dict[str, str]:
+    return {i.key: i.level for i in items}
+
+
+def test_checklist_all_good_is_ready() -> None:
+    from gaze_cursor.posture import build_checklist, checklist_ready
+
+    items = build_checklist(_ref(), _m(), STILL, LIGHT_OK)
+    assert set(_levels(items).values()) == {"good"} and checklist_ready(items)
+
+
+def test_checklist_reacts_when_the_user_corrects_a_step() -> None:
+    from gaze_cursor.posture import build_checklist, checklist_ready
+
+    ref = _ref()
+    far = build_checklist(ref, _m(distance=0.050), STILL, LIGHT_OK)
+    assert _levels(far)["distance"] != "good" and "move closer" in far[0].hint and not checklist_ready(far)
+    fixed = build_checklist(ref, _m(distance=0.066), STILL, LIGHT_OK)       # after moving closer
+    assert _levels(fixed)["distance"] == "good" and checklist_ready(fixed)
+    tilted = build_checklist(ref, _m(pitch=0.0), STILL, LIGHT_OK)
+    assert _levels(tilted)["pitch"] != "good" and "screen angle" in tilted[1].hint
+    turned = build_checklist(ref, _m(yaw=14.0), STILL, LIGHT_OK)
+    assert _levels(turned)["facing"] != "good" and not checklist_ready(turned)
+
+
+def test_light_step_flags_only_extremes() -> None:
+    from gaze_cursor.posture import build_checklist
+
+    dim = {"face": 20.0, "background": 60.0, "ratio": 0.3, "clipped": 0.0}
+    assert _levels(build_checklist(_ref(), _m(), STILL, dim))["light"] == "off"
+    backlit = {"face": 60.0, "background": 200.0, "ratio": 0.3, "clipped": 0.0}
+    assert _levels(build_checklist(_ref(), _m(), STILL, backlit))["light"] == "good"   # never gates on ratio
+
+
+def test_stillness_waits_then_flags_movement() -> None:
+    from gaze_cursor.posture import build_checklist, checklist_ready
+
+    assert _levels(build_checklist(_ref(), _m(), STILL[:5], LIGHT_OK))["still"] == "wait"
+    assert not checklist_ready(build_checklist(_ref(), _m(), STILL[:5], LIGHT_OK))   # measuring blocks
+    moving = [_m(pitch=-7.0 + (3.0 if i % 2 else -3.0)) for i in range(45)]
+    items = build_checklist(_ref(), _m(), moving, LIGHT_OK)
+    assert _levels(items)["still"] != "good" and not checklist_ready(items)
+
+
+def test_no_reference_never_blocks_but_light_and_stillness_still_do() -> None:
+    from gaze_cursor.posture import build_checklist, checklist_ready
+
+    items = build_checklist(None, _m(), STILL, LIGHT_OK)
+    assert [i.level for i in items[:3]] == ["unknown"] * 3 and checklist_ready(items)
+    dark = {"face": 10.0, "background": 20.0, "ratio": 0.5, "clipped": 0.0}
+    assert not checklist_ready(build_checklist(None, _m(), STILL, dark))
+
+
+def test_no_face_is_not_ready() -> None:
+    from gaze_cursor.posture import build_checklist, checklist_ready
+
+    items = build_checklist(_ref(), None, [], None)
+    assert not checklist_ready(items) and _levels(items)["distance"] == "off"
+
+
+def test_current_setup_becomes_its_own_reference() -> None:
+    from gaze_cursor.posture import build_checklist, checklist_ready
+
+    mine = [_m(pitch=-2.0, yaw=9.0, distance=0.05) for _ in range(45)]      # not like any earlier session
+    own = Reference.from_current(mine)
+    assert own.center["pitch"] == pytest.approx(-2.0) and own.n_sessions == 0
+    assert checklist_ready(build_checklist(own, mine[0], mine, LIGHT_OK))   # my setup is "right" for me
+    assert not checklist_ready(build_checklist(_ref(), mine[0], mine, LIGHT_OK))
+    with pytest.raises(ValueError):
+        Reference.from_current(mine[:3])
+
+
+def test_checklist_and_summary_screens_keep_the_notch_strip_clear() -> None:
     from gaze_cursor.config import ScreenConfig
-    from gaze_cursor.posture import summarize_recording
-    from gaze_cursor.sinks.guide_view import SETUP_STEPS, draw_instructions, draw_summary
+    from gaze_cursor.posture import build_checklist, summarize_recording
+    from gaze_cursor.sinks.guide_view import draw_summary
     from gaze_cursor.sinks.overlay import FullscreenCanvas
+    from gaze_cursor.sinks.posture_view import draw_checklist
 
     cfg = ScreenConfig()
     canvas = FullscreenCanvas(cfg)
     strip = int(cfg.top_inset_pt) + 2
     blank = canvas.blank()[:strip]
+    frame = np.full((720, 1280, 3), 120, np.uint8)
+    bad = build_checklist(_ref(), _m(pitch=0.0, distance=0.05), STILL, LIGHT_OK)
     s = summarize_recording(_ref(), _frames(10, pitch=0.0))
-    for img in (draw_instructions(canvas), draw_summary(canvas, s, "session_x.npz"),
+    for img in (draw_checklist(canvas, frame, bad, False, True, "Set up your position"),
+                draw_checklist(canvas, None, build_checklist(_ref(), None, [], None), False, False, "t"),
+                draw_summary(canvas, s, "session_x.npz"),
                 draw_summary(canvas, summarize_recording(_ref(), []), "session_x.npz")):
         assert (img[:strip] == blank).all()
-    heads = " ".join(h for h, _ in SETUP_STEPS).lower()
-    assert "all the way back" in heads and "arm's length" in heads
+
+
+def test_lighting_labels_for_the_sessions_measured_so_far() -> None:
+    from gaze_cursor.posture import lighting_label
+
+    assert lighting_label(78, 146) == "backlit"      # v2 session 1
+    assert lighting_label(37, 75) == "dim"           # dim, screen only
+    assert lighting_label(130, 120) == "front-lit"
+    assert lighting_label(90, 100) == "mixed"
+
+
+def test_session_lighting_summary_is_storable() -> None:
+    import json
+    from gaze_cursor.posture import summarize_lighting
+
+    frames = [{"face": 36.0 + i % 3, "background": 75.0, "ratio": 0.5, "clipped": 0.0} for i in range(30)]
+    s = summarize_lighting(frames)
+    assert s["label"] == "dim" and s["frames"] == 30 and s["face"] == pytest.approx(37.0, abs=0.1)
+    json.dumps(s)
+    assert summarize_lighting([]) is None
+
+
+def test_checklist_flags_lighting_that_differs_from_calibration() -> None:
+    from gaze_cursor.posture import build_checklist
+
+    calib = {"face": 37.0, "background": 75.0, "label": "dim"}
+    brighter = {"face": 110.0, "background": 140.0, "ratio": 0.8, "clipped": 0.0}
+    item = [i for i in build_checklist(_ref(), _m(), STILL, brighter, calib) if i.key == "light"][0]
+    assert item.level == "adjust" and "differs from calibration" in item.hint and "dim" in item.hint
+    same = {"face": 40.0, "background": 78.0, "ratio": 0.5, "clipped": 0.0}
+    assert [i for i in build_checklist(_ref(), _m(), STILL, same, calib) if i.key == "light"][0].level == "good"
+    assert [i for i in build_checklist(_ref(), _m(), STILL, brighter, None) if i.key == "light"][0].level == "good"
+
+
+def test_summary_screen_with_lighting_and_without_a_comparison_keeps_the_notch_clear() -> None:
+    from gaze_cursor.config import ScreenConfig
+    from gaze_cursor.sinks.guide_view import draw_summary
+    from gaze_cursor.sinks.overlay import FullscreenCanvas
+
+    cfg = ScreenConfig()
+    canvas = FullscreenCanvas(cfg)
+    strip = int(cfg.top_inset_pt) + 2
+    img = draw_summary(canvas, None, "session_x.npz", {"label": "dim", "face": 37.0, "background": 75.0})
+    assert (img[:strip] == canvas.blank()[:strip]).all() and (img != canvas.blank()).any()
