@@ -71,7 +71,7 @@ def main() -> None:
                     help="skip the setup guidance and the position check against the earlier sessions")
     ap.add_argument("--no-images", action="store_true",
                     help="do not save the replayable face crops (default: saved next to the session, "
-                         "local only, ~8-13 MB per session)")
+                         "local only, ~10-15 MB per session)")
     ap.add_argument("--dry-run", action="store_true",
                     help="save to data/dry_runs/ instead of data/sessions/, so a practice run can never "
                          "be mistaken for a real session")

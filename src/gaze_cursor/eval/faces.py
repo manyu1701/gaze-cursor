@@ -18,8 +18,10 @@ import numpy as np
 QUALITY = 90
 MARGIN = 1.5            # crop side = largest face-mesh bbox side * MARGIN
 FPS = 30
-# Measured JPEG size per thousand crop pixels (live camera, 455 px crop): q85 0.113 KB, q92 0.156 KB.
-_KB_PER_KPX = {85: 0.113, 92: 0.156}
+# JPEG size per thousand crop pixels. Measured at q90: 0.143 KB (live, 437 px crop) and 0.183 KB (the
+# 2026-10-13 dry-run session, 331 px crops, front-lit); the table below gives 0.164 at q90, so +-25%
+# covers both. Scaled between q85 and q92 for other qualities.
+_KB_PER_KPX = {85: 0.125, 92: 0.180}
 
 
 def faces_path_for(session_path: Path) -> Path:
@@ -51,7 +53,7 @@ def encode_crop(image: np.ndarray, box: tuple[int, int, int, int], quality: int 
 
 def estimate_mb(n_frames: int, side: int = 316, quality: int = QUALITY) -> tuple[float, float]:
     """(low, high) MB for ``n_frames`` crops of ``side`` px, +-25% around the point estimate.
-    Typical v2 session: ~750 frames, 316 px crops -> about 8-13 MB."""
+    Typical v2 session: ~750 frames, 316-331 px crops -> about 9-15 MB (measured: 15.3 MB)."""
     q = sorted(_KB_PER_KPX)
     lo, hi = q[0], q[-1]
     kb_per_kpx = _KB_PER_KPX[lo] + (_KB_PER_KPX[hi] - _KB_PER_KPX[lo]) * np.clip((quality - lo) / (hi - lo), 0, 1)

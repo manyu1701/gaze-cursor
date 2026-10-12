@@ -61,7 +61,9 @@ def test_sidecar_alignment_empty_rows_and_permissions(tmp_path: Path) -> None:
 
 def test_estimate_matches_the_measured_sizes() -> None:
     lo, hi = estimate_mb(750, side=316, quality=90)
-    assert 7 < lo < hi < 16                                          # about 8-13 MB for a v2 session
+    assert 7 < lo < hi < 16                                          # about 9-15 MB for a v2 session
+    assert estimate_mb(761, side=331)[0] <= 15.3 <= estimate_mb(761, side=331)[1]   # the dry-run session
+    assert estimate_mb(60, side=437)[0] <= 60 * 27.3 / 1024 <= estimate_mb(60, side=437)[1]   # live measurement
     assert estimate_mb(1500)[0] == pytest.approx(2 * estimate_mb(750)[0])
 
 
