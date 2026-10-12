@@ -126,3 +126,10 @@ def test_bootstrap_diff_ci_brackets_a_known_difference_and_is_seeded() -> None:
     a, b = rng.normal(5.0, 1.0, 40), rng.normal(3.0, 1.0, 40)
     lo, hi = bootstrap_diff_ci(a, b, 4000, seed=1)
     assert lo < 2.0 < hi and lo > 1.0 and (lo, hi) == bootstrap_diff_ci(a, b, 4000, seed=1)
+
+
+def test_class_of_matches_the_session_classification() -> None:
+    from gaze_cursor.eval.prereg2 import class_of
+
+    assert class_of(124, 79) == "F" and class_of(78, 146) == "B" and class_of(37, 75) == "D"
+    assert class_of(9, 2) is None and class_of(93, 148) is None and class_of(119, 70) == "F"

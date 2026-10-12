@@ -5,12 +5,18 @@ Frames are never mirrored. Screen size/geometry comes from Quartz (macOS points)
 
 `--check-screen` only shows corner/center markers and the detected size, to verify that the
 OpenCV fullscreen window maps 1:1 onto the screen's point coordinates.
+
+`--check-light` shows a calibration-like screen (dark background, one ring) with a live reading of
+the face and background brightness, the lighting label, the brightness gate and the round-2 class.
+Use it to set up lighting: it measures what a recording will actually see (the calibration screen
+is dark, which gives less light than a bright terminal or the checklist screen does).
 """
 
 from __future__ import annotations
 
 import argparse
 import time
+from collections import deque
 
 import cv2
 
@@ -22,10 +28,11 @@ from gaze_cursor.eval.targets import build_plan
 from gaze_cursor.features import extract_features
 from gaze_cursor.landmarks import FaceTracker
 import cv2
+import numpy as np
 
-from gaze_cursor.eval.prereg2 import lighting_class
+from gaze_cursor.eval.prereg2 import class_of, lighting_class
 from gaze_cursor.posture import (
-    Reference, lighting_stats, note_mismatch, posture_metrics, summarize_lighting, summarize_recording)
+    LIGHT_MIN_FACE, Reference, lighting_label, lighting_stats, note_mismatch, posture_metrics, summarize_lighting, summarize_recording)
 from gaze_cursor.sinks.guide_view import draw_summary, wait_for_key
 from gaze_cursor.sinks.overlay import FullscreenCanvas
 from gaze_cursor.sinks.posture_view import run_posture_check
@@ -60,8 +67,40 @@ def check_screen(cfg: ScreenConfig) -> None:
                 return
 
 
+def check_light(cfg: ScreenConfig) -> None:
+    """Calibration-like screen with a live lighting readout; ESC or Q exits."""
+    recent: deque[dict[str, float]] = deque(maxlen=15)
+    with Camera() as cam, FaceTracker() as tracker, FullscreenCanvas(cfg) as canvas:
+        while True:
+            frame = cam.read()
+            result = tracker.process(frame) if frame is not None else None
+            if result is None:
+                recent.clear()
+            else:
+                recent.append(lighting_stats(cv2.cvtColor(frame.image, cv2.COLOR_BGR2GRAY), result.points))
+            img = canvas.blank()                       # same dark background as the recording screen
+            canvas.dot(img, (cfg.width_px / 2, cfg.height_px / 2))
+            if recent:
+                face = float(np.mean([x["face"] for x in recent]))
+                bg = float(np.mean([x["background"] for x in recent]))
+                cls = class_of(face, bg)
+                lines = [f"face {face:.0f}/255   background {bg:.0f}   ratio {face / bg:.2f}   {lighting_label(face, bg)}",
+                         f"brightness gate (60): {'passes' if face >= LIGHT_MIN_FACE else 'BLOCKED (SPACE locked, U overrides)'}"
+                         f"   round-2 class: {cls or 'none (would be excluded)'}",
+                         "dim 25-50 | backlit 60-97 with ratio < 0.6 | front-lit 100-155"]
+            else:
+                lines = ["no face detected"]
+            for k, line in enumerate(lines):           # small grey text: adds almost no light
+                cv2.putText(img, line, (40, canvas.safe_top + 30 + 28 * k), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                            (150, 150, 150), 1, cv2.LINE_AA)
+            if canvas.show(img) in (27, ord("q")):
+                return
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--check-light", action="store_true",
+                    help="show the live lighting as a recording would see it (calibration-like dark screen)")
     ap.add_argument("--check-screen", action="store_true")
     ap.add_argument("--layout", choices=("v1", "v2"), default="v2",
                     help="v2: 16 edge-reaching calibration + 9 interior held-out targets, random "
@@ -82,6 +121,9 @@ def main() -> None:
     print(f"screen: {cfg}")
     if args.check_screen:
         check_screen(cfg)
+        return
+    if args.check_light:
+        check_light(cfg)
         return
     seed = int(time.time()) % 2**31 if args.seed is None else args.seed
     record_s = RECORD_S[args.layout]

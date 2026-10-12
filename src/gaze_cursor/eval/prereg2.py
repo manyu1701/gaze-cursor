@@ -46,6 +46,13 @@ def lighting_class(meta: dict) -> str | None:
     return None
 
 
+def class_of(face: float, background: float) -> str | None:
+    """Round-2 class (F / B / D) for a face and background brightness, or None if outside every range."""
+    ratio = face / background if background else float("nan")
+    from gaze_cursor.posture import lighting_label
+    return lighting_class({"lighting": {"face": face, "ratio": ratio, "label": lighting_label(face, background)}})
+
+
 @dataclass
 class Selection:
     f_twin: Session | None
