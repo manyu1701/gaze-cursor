@@ -13,7 +13,7 @@ import numpy as np
 from gaze_cursor.capture import Camera
 from gaze_cursor.landmarks import FaceTracker
 from gaze_cursor.posture import (
-    LABELS, CheckItem, PostureGate, Reference, build_checklist, checklist_ready, lighting_stats,
+    LABELS, STILL_MIN_FRAMES, CheckItem, PostureGate, Reference, build_checklist, checklist_ready, lighting_stats,
     posture_metrics)
 from gaze_cursor.sinks.overlay import FullscreenCanvas
 
@@ -49,8 +49,19 @@ def _icon(img: np.ndarray, center: tuple[int, int], level: str) -> None:
         cv2.line(img, (x - 7, y + 7), (x + 7, y - 7), color, 3, cv2.LINE_AA)
 
 
+def default_footer(mode: str, ready: bool, override_label: str) -> tuple[str, str]:
+    """(note, key line) for the bottom of the screen. SPACE only starts when every step is green;
+    U is the single override; in monitor mode SPACE just exits."""
+    if mode == "monitor":
+        return "", "SPACE or ESC: exit"
+    if ready:
+        return "", f"SPACE: start     U: {override_label} instead     ESC or Q: cancel"
+    return ("SPACE unlocks when every step is green.", f"U: {override_label}     ESC or Q: cancel")
+
+
 def draw_checklist(canvas: FullscreenCanvas, frame: np.ndarray | None, items: list[CheckItem],
-                   ready: bool, tracked: bool, title: str) -> np.ndarray:
+                   ready: bool, tracked: bool, title: str, mode: str = "gate",
+                   override_label: str = "use my current setup", notice: str | None = None) -> np.ndarray:
     """One screen: each setup step with a live status icon, its current value and what to change."""
     img = canvas.blank()
     W, H = canvas.size
@@ -78,7 +89,7 @@ def draw_checklist(canvas: FullscreenCanvas, frame: np.ndarray | None, items: li
     if not tracked:
         status, color = "No face detected: look at the camera", RED
     elif ready:
-        status, color = "READY: press SPACE to start", GREEN
+        status, color = ("READY: press SPACE to start" if mode == "gate" else "All steps green"), GREEN
     elif not todo:
         status, color = "Hold still...", GREEN
     else:
@@ -86,8 +97,12 @@ def draw_checklist(canvas: FullscreenCanvas, frame: np.ndarray | None, items: li
     size = cv2.getTextSize(status, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)[0]
     cv2.putText(img, status, (px + (PREVIEW[0] - size[0]) // 2, py + PREVIEW[1] + 60),
                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2, cv2.LINE_AA)
-    canvas.text(img, "These are guidelines: you can always continue, or calibrate in your own setup.", y=H - 84)
-    canvas.text(img, "SPACE: continue anyway     U: use my current setup     ESC or Q: cancel", y=H - 40)
+    note, keys = default_footer(mode, ready, override_label)
+    if notice:  # e.g. SPACE pressed before everything was green
+        cv2.putText(img, notice, (60, H - 130), cv2.FONT_HERSHEY_SIMPLEX, 0.7, AMBER, 2, cv2.LINE_AA)
+    if note:
+        canvas.text(img, note, y=H - 84)
+    canvas.text(img, keys, y=H - 40)
     return img
 
 
@@ -98,18 +113,21 @@ def _median(values: deque[dict[str, float]]) -> dict[str, float] | None:
 def run_posture_check(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanvas,
                       ref: Reference | None,
                       title: str = "Set up your position: each step turns green when it is right",
-                      ref_lighting: dict | None = None) -> PostureResult:
-    """Show the live checklist until the user presses SPACE (continue) or ESC/Q (cancel).
+                      ref_lighting: dict | None = None, mode: str = "gate",
+                      override_label: str = "use my current setup") -> PostureResult:
+    """Show the live checklist and return what the user chose.
 
-    The guidance never blocks: SPACE always continues (``in_position`` says whether every measured
-    step was good, held for a second, at that moment), and U continues with the user's current
-    posture as the reference (``own_setup``), for calibrating in the setup they will really use.
-    ``ref`` may be None for the very first session.
+    ``mode="gate"``: SPACE only works once every measured step has been green for a second (it
+    means "I am in position, start"); until then it shows a notice. U is the single override: it
+    proceeds with the current setup (``own_setup=True``, ``reference`` = the current posture, for
+    a session recorded in the user's own setup). ESC or Q cancels. ``mode="monitor"``: a plain
+    viewer where SPACE or ESC just exits. ``ref`` may be None for the very first session.
     """
     gate = PostureGate()
     window: deque[dict[str, float]] = deque(maxlen=STILL_WINDOW_FRAMES)
     recent: deque[dict[str, float]] = deque(maxlen=SMOOTH_FRAMES)
     light: deque[dict[str, float]] = deque(maxlen=SMOOTH_FRAMES)
+    notice_until = 0.0
     while True:
         frame = cam.read()
         if frame is None:
@@ -123,15 +141,20 @@ def run_posture_check(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanva
         else:
             window.clear(); recent.clear(); light.clear()
         items = build_checklist(ref, _median(recent), list(window), _median(light), ref_lighting)
-        gate.update(time.monotonic(), checklist_ready(items))
-        key = canvas.show(draw_checklist(canvas, frame.image, items, gate.in_position,
-                                         result is not None, title))
+        now = time.monotonic()
+        gate.update(now, checklist_ready(items))
+        key = canvas.show(draw_checklist(
+            canvas, frame.image, items, gate.in_position, result is not None, title, mode,
+            override_label, "Not ready yet: fix the steps marked with a cross, or press U" if now < notice_until else None))
         if key in (27, ord("q")):
             return PostureResult(False, gate.in_position)
         if key == 32:
-            return PostureResult(True, gate.in_position)
-        if key in (ord("u"), ord("U")) and len(window) >= STILL_MIN_FRAMES:
-            return PostureResult(True, True, own_setup=True, reference=Reference.from_current(list(window)))
+            if mode == "monitor" or gate.in_position:
+                return PostureResult(True, gate.in_position)
+            notice_until = now + 2.0
+        elif key in (ord("u"), ord("U")) and mode == "gate" and len(window) >= STILL_MIN_FRAMES:
+            return PostureResult(True, gate.in_position, own_setup=True,
+                                 reference=Reference.from_current(list(window)))
 
 
 def draw_chip(canvas: FullscreenCanvas, img: np.ndarray, ref: Reference,

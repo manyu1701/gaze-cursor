@@ -266,3 +266,95 @@ def test_summary_screen_with_lighting_and_without_a_comparison_keeps_the_notch_c
     strip = int(cfg.top_inset_pt) + 2
     img = draw_summary(canvas, None, "session_x.npz", {"label": "dim", "face": 37.0, "background": 75.0})
     assert (img[:strip] == canvas.blank()[:strip]).all() and (img != canvas.blank()).any()
+
+
+# --- key handling of the live check (fake camera, tracker and canvas) -------------------------
+
+class _FakeCam:
+    def read(self):
+        from gaze_cursor.capture import Frame
+        return Frame(image=np.full((720, 1280, 3), 120, np.uint8), timestamp_ms=0)
+
+
+class _FakeTracker:
+    def __init__(self, yaw: float = 0.0) -> None:
+        from gaze_cursor.landmarks import LandmarkResult
+        self._res = LandmarkResult(points=_face(), transform=_rot_y(yaw), blendshapes=np.zeros(52, np.float32))
+
+    def process(self, frame):
+        return self._res
+
+
+class _FakeCanvas:
+    """Replays scripted key presses and records the footer shown on each frame."""
+
+    def __init__(self, keys) -> None:
+        from gaze_cursor.config import ScreenConfig
+        from gaze_cursor.sinks.overlay import FullscreenCanvas
+        self._real = FullscreenCanvas(ScreenConfig())
+        self.size, self.safe_top = self._real.size, self._real.safe_top
+        self.keys, self.calls = iter(keys), 0
+
+    def blank(self):
+        return self._real.blank()
+
+    def text(self, img, msg, y=None):
+        self._real.text(img, msg, y)
+
+    def show(self, img):
+        self.calls += 1
+        return next(self.keys, 27)           # ESC when the script runs out, so a test can never hang
+
+
+def _check_setup(monkeypatch, keys, mode="gate", tracker_yaw=0.0):
+    import gaze_cursor.sinks.posture_view as pv
+    clock = iter(np.arange(0, 1000, 0.1))    # each loop iteration advances the clock by 0.1 s
+    monkeypatch.setattr(pv.time, "monotonic", lambda: next(clock))
+    mine = posture_metrics(_face(), _rot_y(0.0), (1280, 720))
+    ref = Reference.from_arrays({m: np.full(50, mine[m]) for m in METRICS})
+    canvas = _FakeCanvas(keys)
+    return pv.run_posture_check(_FakeCam(), _FakeTracker(tracker_yaw), canvas, ref, mode=mode), canvas
+
+
+def test_space_is_ignored_until_every_step_is_green(monkeypatch) -> None:
+    keys = [32] * 5 + [-1] * 60 + [32]               # early SPACE presses, later SPACE once ready
+    res, canvas = _check_setup(monkeypatch, keys)
+    assert res.proceed and res.in_position and not res.own_setup
+    assert canvas.calls > 6                           # the early presses did not end the check
+
+
+def test_space_never_starts_when_not_in_position(monkeypatch) -> None:
+    # head turned 25 degrees: the facing step never turns green, so SPACE can never start
+    res, canvas = _check_setup(monkeypatch, [-1] * 40 + [32] * 5 + [-1] * 30, tracker_yaw=25.0)
+    assert not res.proceed                            # ended only because the script ran out (ESC)
+
+
+def test_u_overrides_with_the_current_setup_as_reference(monkeypatch) -> None:
+    res, _ = _check_setup(monkeypatch, [-1] * 30 + [ord("u")], tracker_yaw=25.0)   # not in position
+    assert res.proceed and res.own_setup and not res.in_position
+    assert res.reference.center["yaw"] == pytest.approx(25.0, abs=1e-6)
+
+
+def test_u_is_ignored_before_enough_frames_are_measured(monkeypatch) -> None:
+    res, _ = _check_setup(monkeypatch, [ord("u")] * 3 + [27])
+    assert not res.proceed and not res.own_setup      # 3 frames is not enough; the ESC ended it
+
+
+def test_escape_and_q_cancel(monkeypatch) -> None:
+    assert not _check_setup(monkeypatch, [-1, 27])[0].proceed
+    assert not _check_setup(monkeypatch, [-1, ord("q")])[0].proceed
+
+
+def test_monitor_mode_space_exits_at_once(monkeypatch) -> None:
+    res, canvas = _check_setup(monkeypatch, [-1, -1, 32], mode="monitor", tracker_yaw=25.0)
+    assert res.proceed and canvas.calls == 3
+
+
+def test_footer_text_matches_what_the_keys_do() -> None:
+    from gaze_cursor.sinks.posture_view import default_footer
+
+    note, keys = default_footer("gate", False, "use my current setup")
+    assert "SPACE unlocks" in note and "SPACE: start" not in keys and "U:" in keys
+    note, keys = default_footer("gate", True, "use my current setup")
+    assert "SPACE: start" in keys and "continue anyway" not in keys
+    assert default_footer("monitor", False, "x") == ("", "SPACE or ESC: exit")

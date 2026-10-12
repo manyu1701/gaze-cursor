@@ -102,7 +102,8 @@ def main() -> None:
         if not args.no_check:
             # Live checklist: each setup step turns green as it is satisfied (first session: no
             # earlier sessions to compare position against, so only light and stillness are checked).
-            check = run_posture_check(cam, tracker, canvas, ref)
+            check = run_posture_check(cam, tracker, canvas, ref,
+                                      override_label="calibrate in my current setup")
             if not check.proceed:
                 return
             if check.own_setup:  # the user chose to calibrate in their current setup: nothing forced

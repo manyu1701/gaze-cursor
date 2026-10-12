@@ -52,7 +52,8 @@ def main() -> None:
         if ref is not None:
             check = run_posture_check(cam, tracker, canvas, ref,
                                       title="Sit as you did when you calibrated this model",
-                                      ref_lighting=session.meta.get("lighting"))
+                                      ref_lighting=session.meta.get("lighting"),
+                                      override_label="run anyway (accuracy may drop)")
             if not check.proceed:
                 return
         metrics = None

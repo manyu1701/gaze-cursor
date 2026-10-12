@@ -44,7 +44,7 @@ def main() -> None:
     for m in METRICS:
         print(f"  {LABELS[m]:22s} {ref.center[m]:8.3f}  (tolerance unit {ref.scale[m]:.3f})")
     with Camera() as cam, FaceTracker() as tracker, FullscreenCanvas(ScreenConfig.from_system()) as canvas:
-        res = run_posture_check(cam, tracker, canvas, ref)
+        res = run_posture_check(cam, tracker, canvas, ref, mode="monitor")
     print("in position" if res.in_position else "not in position", "when you exited")
 
 
