@@ -27,7 +27,7 @@ def main() -> None:
     ap.add_argument("--model", choices=MODELS, default="ridge")
     ap.add_argument("--alpha", type=float, default=1.0)
     ap.add_argument("--features", choices=FEATURE_SETS, default="iris",
-                    help="iris = iris/pose/openness; blend = pose + blendshapes; both")
+                    help="iris = iris+pose+openness (baseline); eyes = iris+openness; gaze = iris only; blend = pose+blendshapes; both")
     args = ap.parse_args()
 
     session = load_session(args.session or latest_session())

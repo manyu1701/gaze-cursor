@@ -36,8 +36,8 @@ uv run scripts/gaze_overlay.py           # live gaze dot, using the latest sessi
 ```
 
 - `calibrate.py`: sit about 60 cm away with your head fairly still. `SPACE` starts and `ESC` aborts. The session is saved to `data/sessions/`.
-- `benchmark.py [session.npz] [--model ridge|poly2] [--alpha 1.0] [--features iris|blend|both]`: runs offline from a recording, with no camera. `iris` is the baseline (iris position, head pose, eye openness); `blend` uses head pose plus the face blendshapes; `both` combines them. It prints error (px, cm, degrees; mean and median) and jitter, and appends a row to `data/results.csv`.
-- `gaze_overlay.py [session.npz] [--model ridge|poly2] [--features iris|blend|both]`: `q` or `ESC` quits.
+- `benchmark.py [session.npz] [--model ridge|poly2] [--alpha 1.0] [--features iris|eyes|gaze|blend|both]`: runs offline from a recording, with no camera. `iris` is the baseline (iris position, head pose, eye openness); `eyes` drops head pose; `gaze` is iris position only; `blend` uses head pose plus the face blendshapes; `both` combines iris and blendshapes. It prints error (px, cm, degrees; mean and median) and jitter, and appends a row to `data/results.csv`.
+- `gaze_overlay.py [session.npz] [--model ridge|poly2] [--features gaze|eyes|iris|blend|both]`: `q` or `ESC` quits. It defaults to `gaze` (iris only) because raw head pose makes the dot jump when your posture drifts from calibration. Calibrate and use it in the same posture; it warns when the live input is far from the calibration data.
 
 Screen size (in macOS points), physical size, and the notch/menu-bar strip are read from macOS at run time, and targets are kept clear of the notch and the rounded top corners, and the viewing distance defaults to 60 cm (`src/gaze_cursor/config.py`). Frames are never mirrored for processing or recording; the viewer flips its display only. Face blendshapes are recorded in every session as candidate features.
 

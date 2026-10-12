@@ -69,3 +69,12 @@ def test_assemble_feature_sets() -> None:
     assert assemble(base, blend, BLEND_FEATURE_NAMES, "blend")[0, :3].tolist() == [4, 5, 6]
     with pytest.raises(ValueError):
         assemble(base, blend, BLEND_FEATURE_NAMES, "nope")
+
+
+def test_pose_free_feature_sets() -> None:
+    from gaze_cursor.features import BLEND_FEATURE_NAMES, assemble
+
+    base = np.arange(9, dtype=float)[None, :]
+    blend = np.zeros((1, len(BLEND_FEATURE_NAMES)))
+    assert assemble(base, blend, BLEND_FEATURE_NAMES, "eyes")[0].tolist() == [0, 1, 2, 3, 7, 8]
+    assert assemble(base, blend, BLEND_FEATURE_NAMES, "gaze")[0].tolist() == [0, 1, 2, 3]
