@@ -29,7 +29,7 @@ Ordered by what the M1 data says matters most (see PROGRESS.md, "Independent ana
 
 1. **DONE. Evaluation foundation:** grouped CV by target (leave-one-target-out) and leave-one-session-out; bootstrap CIs over targets; paired model comparisons; per-target bias vs spread report; screen error heatmap. Tune ridge alpha with grouped CV (alpha ~100 already beat alpha 1 on held-out targets).
 2. **DONE. Calibration redesign:** more targets (16-25) that reach close to the safe screen edges (no extrapolation at test time); shorter recording per target (~1 s; error rises after ~1.2 s); randomized order.
-2b. **Lighting and replayable images** (pre-registered round 2: H2, H3).
+2b. **DONE. Lighting and replayable images** (pre-registered round 2: **H2 supported**, d = +2.42 deg [+1.43, +3.41]; **H3 supported**, gap +4.08 deg [+2.83, +5.38]; caveats in PROGRESS.md).
    - **Replayable images:** for every frame in new sessions save a native-resolution face crop (JPEG, local only, gitignored, size estimate per session) so image-level fixes and pretrained gaze models can be tested offline on recorded data.
    - **Lighting gate:** a data-based minimum face brightness (proposed 60/255; recommended 100) in the setup checklist with clear front-light guidance; the U override stays.
    - **Pre-registered round 2:** H2 = calibrating in the lighting you will use beats a pool recorded in other lighting; H3 = sessions that pass the brightness gate are more accurate than sessions below it. Smallest design: 4 new sessions (front-lit, backlit, 2 dim) plus 2 existing sessions reused as training twins. Protocol and success criteria are written in PROGRESS.md before anything is recorded.
