@@ -7,3 +7,5 @@ data/sessions/*
 models/*
 !models/.gitkeep
 debug/
+data/dry_runs/*
+!data/dry_runs/.gitkeep
