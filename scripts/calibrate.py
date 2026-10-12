@@ -16,7 +16,8 @@ import cv2
 
 from gaze_cursor.capture import Camera
 from gaze_cursor.config import ScreenConfig
-from gaze_cursor.eval.session import SessionRecorder, clean_sessions
+from gaze_cursor.eval.faces import FPS, QUALITY, crop_box, encode_crop, estimate_mb, faces_path_for
+from gaze_cursor.eval.session import SESSIONS_DIR, SessionRecorder, clean_sessions
 from gaze_cursor.eval.targets import build_plan
 from gaze_cursor.features import extract_features
 from gaze_cursor.landmarks import FaceTracker
@@ -68,6 +69,12 @@ def main() -> None:
                     help="seed for held-out points and order (default: fresh, stored in the session)")
     ap.add_argument("--no-check", action="store_true",
                     help="skip the setup guidance and the position check against the earlier sessions")
+    ap.add_argument("--no-images", action="store_true",
+                    help="do not save the replayable face crops (default: saved next to the session, "
+                         "local only, ~8-13 MB per session)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="save to data/dry_runs/ instead of data/sessions/, so a practice run can never "
+                         "be mistaken for a real session")
     ap.add_argument("--note", default="", help='condition tag stored in the session, e.g. "evening, lamp"')
     args = ap.parse_args()
     cfg = ScreenConfig.from_system()
@@ -90,6 +97,14 @@ def main() -> None:
         "n_calib": n_calib, "n_test": len(plan) - n_calib,
         "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
     })
+    save_images = not args.no_images
+    out_dir = SESSIONS_DIR.parent / "dry_runs" if args.dry_run else SESSIONS_DIR
+    if save_images:
+        lo, hi = estimate_mb(int(len(plan) * record_s * FPS))
+        print(f"face images: saved with the session (local only, not uploaded): about {lo:.0f}-{hi:.0f} MB; "
+              f"--no-images to skip")
+    if args.dry_run:
+        print(f"dry run: the session will be saved to {out_dir}, not used as a real session")
     posture_log: list[dict[str, float]] = []
     light_log: list[dict[str, float]] = []   # lighting is captured from the recorded frames themselves
     with Camera() as cam, FaceTracker() as tracker, FullscreenCanvas(cfg) as canvas:
@@ -144,8 +159,12 @@ def main() -> None:
                 if ref is not None:
                     posture_log.append(posture_metrics(result.points, result.transform, (w, h)))
                 feats = extract_features(result.points, result.transform, (w, h))
+                crop = None
+                if save_images:
+                    box = crop_box(result.points, (w, h))
+                    crop = (encode_crop(frame.image, box, QUALITY), box)
                 rec.add(frame.timestamp_ms, phase, idx, xy, result.points, result.transform,
-                        feats, result.blendshapes)
+                        feats, result.blendshapes, crop)
         rec.meta["blendshape_names"] = list(tracker.blendshape_names)
         summary = summarize_recording(ref, posture_log) if ref is not None else None
         if summary is not None:
@@ -153,8 +172,12 @@ def main() -> None:
         lighting = summarize_lighting(light_log)
         if lighting is not None:
             rec.meta["lighting"] = lighting
-        path = rec.save()
+        rec.meta["face_images"] = save_images
+        path = rec.save(out_dir)
         print(f"Saved {path}")
+        if save_images and faces_path_for(path).exists():
+            print(f"face images: {faces_path_for(path).name}, {faces_path_for(path).stat().st_size / 1e6:.1f} MB "
+                  f"(local only)")
         if lighting is not None:
             print(f"lighting: {lighting['label']} (face {lighting['face']:.0f}/255, background "
                   f"{lighting['background']:.0f}, ratio {lighting['ratio']:.2f}, clipped {lighting['clipped'] * 100:.1f}%)")

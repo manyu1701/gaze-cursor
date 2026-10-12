@@ -56,8 +56,8 @@ def lighting_stats(gray: np.ndarray, points: np.ndarray) -> dict[str, float]:
 
 def lighting_warning(stats: dict[str, float]) -> str | None:
     """Only extremes are flagged (informational, never blocks)."""
-    if stats["face"] < 35:
-        return "very dark: tracking may fail"
+    if stats["face"] < LIGHT_MIN_FACE:
+        return "too dark: put a lamp or window in front of you"
     if stats["face"] > 220 or stats["clipped"] > 0.05:
         return "face overexposed"
     return None
@@ -225,7 +225,13 @@ def summarize_recording(ref: Reference, frames: Sequence[dict[str, float]]) -> d
 # "still" limits are about twice that, so ordinary fixations pass and moving around does not.
 STILL_LIMITS = {"pitch": 1.0, "yaw": 0.8, "roll": 0.6, "distance": 0.0016, "x": 0.003, "y": 0.002}
 STILL_MIN_FRAMES = 20
-LIGHT_MIN_FACE = 35.0  # below this tracking may fail (same threshold as lighting_warning)
+# Brightness gate. Three exploratory within-session points: face 37 -> 7.3-8.6 deg, 78 -> 3.0-3.5,
+# 124 -> 1.3-1.7. 60 sits between the dim and backlit sessions (geometric mean of 37 and 78 is ~54,
+# rounded up) and is the pre-registered H3 threshold (PROGRESS.md); 100 is the recommended level.
+# A three-point inference, not a measured optimum. Absolute face brightness only, never the ratio.
+LIGHT_MIN_FACE = 60.0
+LIGHT_GOOD_FACE = 100.0
+BACKLIT_RATIO = 0.6    # face/background below this triggers the (non-blocking) backlight tip
 
 
 @dataclass(frozen=True)
@@ -239,6 +245,8 @@ class CheckItem:
     level: str
     detail: str
     hint: str = ""
+    tip: str = ""                 # non-blocking advice, shown even when the step is green
+    value: float | None = None    # a live number for a gauge (face brightness for the light step)
 
     @property
     def ok(self) -> bool:
@@ -281,12 +289,20 @@ def build_checklist(ref: Reference | None, metrics: dict[str, float] | None,
     d_lvl, d_txt, d_hint = pos(("distance",), lambda m, r: f"distance {m['distance'] * 100:.1f}% (usual {r.center['distance'] * 100:.1f}%)")
     p_lvl, p_txt, p_hint = pos(("pitch",), lambda m, r: f"head pitch {m['pitch']:+.1f} deg (usual {r.center['pitch']:+.1f})")
     f_lvl, f_txt, f_hint = pos(("yaw", "roll", "x", "y"), lambda m, r: f"yaw {m['yaw']:+.1f}, roll {m['roll']:+.1f} deg, face {'centred' if abs(m['x'] - r.center['x']) < 2 * r.scale['x'] and abs(m['y'] - r.center['y']) < 2 * r.scale['y'] else 'off-centre'}")
+    l_tip = l_value = None
     if lighting is None:
         l_lvl, l_txt, l_hint = "off", "no face detected", "look at the camera"
     else:
+        l_value = lighting["face"]
         l_txt = f"face {lighting['face']:.0f}/255, background {lighting['background']:.0f}"
+        tips = []
+        if lighting["face"] < LIGHT_GOOD_FACE:
+            tips.append(f"more front light helps accuracy (aim for {LIGHT_GOOD_FACE:.0f}+)")
+        if lighting["ratio"] < BACKLIT_RATIO:
+            tips.append("bright light behind you: close the curtain or face a darker wall")
+        l_tip = "; ".join(tips)
         if lighting["face"] < LIGHT_MIN_FACE:
-            l_lvl, l_hint = "off", "more light on your face (tracking may fail)"
+            l_lvl, l_hint = "off", "too dark: put a lamp or window in front of you, aimed at your face"
         elif lighting["face"] > 220 or lighting["clipped"] > 0.05:
             l_lvl, l_hint = "off", "face overexposed: reduce glare or light"
         else:
@@ -307,7 +323,9 @@ def build_checklist(ref: Reference | None, metrics: dict[str, float] | None,
         CheckItem("facing", "Face the screen squarely",
                   "Head level, shoulders relaxed, chin neither up nor down.", f_lvl, f_txt, f_hint),
         CheckItem("light", "Light on your face",
-                  "No bright window or lamp behind you; avoid glare on glasses.", l_lvl, l_txt, l_hint),
+                  f"Put a lamp or window in front of you, not behind. Face brightness at least "
+                  f"{LIGHT_MIN_FACE:.0f}/255 ({LIGHT_GOOD_FACE:.0f}+ is best); avoid glare on glasses.",
+                  l_lvl, l_txt, l_hint, l_tip or "", l_value),
         CheckItem("still", "Keep your head still, move only your eyes",
                   "Blink normally; this turns green once you hold still for a moment.", s_lvl, s_txt,
                   "" if s_lvl in ("good", "wait") else "hold still"),

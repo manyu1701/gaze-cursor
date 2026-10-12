@@ -13,7 +13,8 @@ NAMES = BLEND_FEATURE_NAMES + tuple(f"other{i}" for i in range(52 - len(BLEND_FE
 
 
 def fake_session(i: int, n_calib: int = 6, n_test: int = 3, frames: int = 5, seed: int = 0,
-                 window: list[int] | None = None, layout: str | None = None) -> Session:
+                 window: list[int] | None = None, layout: str | None = None,
+                 gain: float = 1.0, noise: float = 0.0) -> Session:
     """Frames whose features are a noiseless linear function of the target position."""
     rng = np.random.default_rng(seed + i)
     rows, targets = [], []
@@ -27,6 +28,7 @@ def fake_session(i: int, n_calib: int = 6, n_test: int = 3, frames: int = 5, see
     feats[:, 0] = xy[:, 0] / 1470 - 0.5
     feats[:, 1] = xy[:, 1] / 956 - 0.5
     feats[:, 2] = feats[:, 0]; feats[:, 3] = feats[:, 1]
+    feats[:, :4] = feats[:, :4] * gain + rng.normal(0, noise, (len(phase), 4))   # lighting effects
     feats[:, 7:] = 0.25
     blend = np.tile(rng.uniform(0, 1, 52), (len(phase), 1)).astype(np.float32)
     meta = {"screen": {"width_px": 1470, "height_px": 956, "width_cm": 29.0, "height_cm": 18.9,

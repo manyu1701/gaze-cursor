@@ -84,12 +84,12 @@ def test_lighting_stats_and_warning() -> None:
     pts = np.zeros((478, 3))
     pts[:468, 0] = np.linspace(0.3, 0.7, 468)
     pts[:468, 1] = np.linspace(0.3, 0.7, 468)
-    gray[30:70, 30:70] = 60                                       # dark face, bright background
+    gray[30:70, 30:70] = 90                                       # dimmer face, brighter background
     st = lighting_stats(gray, pts)
-    assert st["face"] == pytest.approx(60, abs=1) and st["background"] == pytest.approx(150, abs=1)
-    assert st["ratio"] == pytest.approx(0.4, abs=0.05) and lighting_warning(st) is None
+    assert st["face"] == pytest.approx(90, abs=1) and st["background"] == pytest.approx(150, abs=1)
+    assert st["ratio"] == pytest.approx(0.6, abs=0.05) and lighting_warning(st) is None
     gray[30:70, 30:70] = 20
-    assert lighting_warning(lighting_stats(gray, pts)) == "very dark: tracking may fail"
+    assert lighting_warning(lighting_stats(gray, pts)).startswith("too dark")
 
 
 def _frames(n: int, **shift: float) -> list[dict[str, float]]:
@@ -247,11 +247,11 @@ def test_session_lighting_summary_is_storable() -> None:
 def test_checklist_flags_lighting_that_differs_from_calibration() -> None:
     from gaze_cursor.posture import build_checklist
 
-    calib = {"face": 37.0, "background": 75.0, "label": "dim"}
-    brighter = {"face": 110.0, "background": 140.0, "ratio": 0.8, "clipped": 0.0}
+    calib = {"face": 80.0, "background": 150.0, "label": "backlit"}
+    brighter = {"face": 130.0, "background": 140.0, "ratio": 0.93, "clipped": 0.0}
     item = [i for i in build_checklist(_ref(), _m(), STILL, brighter, calib) if i.key == "light"][0]
-    assert item.level == "adjust" and "differs from calibration" in item.hint and "dim" in item.hint
-    same = {"face": 40.0, "background": 78.0, "ratio": 0.5, "clipped": 0.0}
+    assert item.level == "adjust" and "differs from calibration" in item.hint and "backlit" in item.hint
+    same = {"face": 85.0, "background": 150.0, "ratio": 0.57, "clipped": 0.0}
     assert [i for i in build_checklist(_ref(), _m(), STILL, same, calib) if i.key == "light"][0].level == "good"
     assert [i for i in build_checklist(_ref(), _m(), STILL, brighter, None) if i.key == "light"][0].level == "good"
 

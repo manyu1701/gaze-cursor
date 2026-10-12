@@ -13,11 +13,12 @@ import numpy as np
 from gaze_cursor.capture import Camera
 from gaze_cursor.landmarks import FaceTracker
 from gaze_cursor.posture import (
-    LABELS, STILL_MIN_FRAMES, CheckItem, PostureGate, Reference, build_checklist, checklist_ready, lighting_stats,
+    LABELS, LIGHT_GOOD_FACE, LIGHT_MIN_FACE, STILL_MIN_FRAMES, CheckItem, PostureGate, Reference, build_checklist, checklist_ready, lighting_stats,
     posture_metrics)
 from gaze_cursor.sinks.overlay import FullscreenCanvas
 
 GREEN, AMBER, RED, GREY, WHITE = (90, 200, 90), (0, 170, 255), (70, 70, 235), (140, 140, 140), (235, 235, 235)
+TIP = (230, 200, 120)  # light blue: advice, not a fault
 _LEVEL_COLOR = {"good": GREEN, "adjust": AMBER, "off": RED, "unknown": GREY, "wait": GREY}
 PREVIEW = (480, 270)
 SMOOTH_FRAMES, STILL_WINDOW_FRAMES = 9, 45  # about 0.3 s and 1.5 s at 30 fps
@@ -59,6 +60,19 @@ def default_footer(mode: str, ready: bool, override_label: str) -> tuple[str, st
     return ("SPACE unlocks when every step is green.", f"U: {override_label}     ESC or Q: cancel")
 
 
+def _brightness_bar(img: np.ndarray, org: tuple[int, int], face: float, width: int = 300) -> None:
+    """Live face-brightness gauge (0-160) with the minimum (60) and recommended (100) marks."""
+    x, y = org
+    cv2.rectangle(img, (x, y - 8), (x + width, y + 8), (50, 50, 50), -1)
+    fill = int(width * min(face, 160.0) / 160.0)
+    cv2.rectangle(img, (x, y - 8), (x + fill, y + 8),
+                  RED if face < LIGHT_MIN_FACE else AMBER if face < LIGHT_GOOD_FACE else GREEN, -1)
+    for mark in (LIGHT_MIN_FACE, LIGHT_GOOD_FACE):
+        mx = x + int(width * mark / 160.0)
+        cv2.line(img, (mx, y - 12), (mx, y + 12), WHITE, 1, cv2.LINE_AA)
+        _put(img, f"{mark:.0f}", (mx - 10, y - 16), GREY, 0.45)   # above the bar, clear of the text below
+
+
 def draw_checklist(canvas: FullscreenCanvas, frame: np.ndarray | None, items: list[CheckItem],
                    ready: bool, tracked: bool, title: str, mode: str = "gate",
                    override_label: str = "use my current setup", notice: str | None = None) -> np.ndarray:
@@ -74,11 +88,17 @@ def draw_checklist(canvas: FullscreenCanvas, frame: np.ndarray | None, items: li
         lines = textwrap.wrap(it.howto, 100)[:2]
         for k, line in enumerate(lines):
             _put(img, line, (left + 60, y + 28 + 20 * k), GREY, 0.5)
-        dy = y + 28 + 20 * len(lines) + 14           # value line right under the instruction
-        _put(img, it.detail, (left + 60, dy), _LEVEL_COLOR[it.level], 0.6)
+        c = y + 28 + 20 * len(lines) + 14             # value line right under the instruction
+        _put(img, it.detail, (left + 60, c), _LEVEL_COLOR[it.level], 0.6)
         if it.hint:
-            _put(img, "-> " + it.hint, (left + 60, dy + 26), AMBER if it.level == "adjust" else RED, 0.6, 2)
-        y += 140
+            c += 26
+            _put(img, "-> " + it.hint, (left + 60, c), AMBER if it.level == "adjust" else RED, 0.6, 2)
+        for k, line in enumerate(textwrap.wrap("tip: " + it.tip, 105) if it.tip else []):
+            c += 22                                    # non-blocking advice, never red
+            _put(img, line, (left + 60, c), TIP, 0.55)
+        if it.key == "light" and it.value is not None:
+            _brightness_bar(img, (left + 360, y - 8), it.value)
+        y = c + 44                                     # rows grow with their hint and tip
     # Mirrored preview (display only; the tracker always sees the unflipped frame).
     px, py = W - 60 - PREVIEW[0], top + 100
     if frame is not None:

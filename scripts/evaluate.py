@@ -9,6 +9,7 @@ over targets. Every run is logged to data/results.csv with its mode.
   uv run scripts/evaluate.py --configs gaze_a10 gaze_blend_a100 --modes losos
   uv run scripts/evaluate.py --compare gaze_a10 gaze_blend_a100 --per-target
   uv run scripts/evaluate.py --preregistered     # the pre-registered H1 test (see PROGRESS.md)
+  uv run scripts/evaluate.py --preregistered-2   # the pre-registered round-2 tests H2 and H3
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ import numpy as np
 
 from gaze_cursor.eval.configs import (
     PREREG_CANDIDATE, PREREG_DIAGNOSTICS, PREREG_REFERENCE, REGISTRY, Config, get_configs)
+from gaze_cursor.eval.prereg2 import (
+    H2_MIN_GAIN_DEG, H3_MIN_GAP_DEG, run_h2, run_h3, select_sessions)
 from gaze_cursor.eval.results_log import append_rows, now
 from gaze_cursor.eval.runner import build_datasets, common_screen, evaluate
 from gaze_cursor.eval.session import clean_sessions, load_session
@@ -204,6 +207,54 @@ def run_preregistered(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_preregistered_2(args: argparse.Namespace) -> int:
+    """The pre-registered round-2 analysis (PROGRESS.md): H2 and H3. Confirmatory: run once."""
+    clean = clean_sessions()
+    sel = select_sessions(clean)
+    for name, why in sel.excluded:
+        print(f"excluded {short(name)}: {why}")
+    for note in sel.ignored:
+        print(f"ignoring {short(note)}")
+    if not sel.complete:
+        print("Refusing to run: the round-2 analysis still needs:\n  - " + "\n  - ".join(sel.missing)
+              + "\nRecord sessions with `uv run scripts/calibrate.py --note \"...\"`; lighting is captured "
+                "automatically and decides which class each session counts as.", file=sys.stderr)
+        return 2
+    cfg = REGISTRY[PREREG_REFERENCE]                       # gaze_a10, the single pre-registered model
+    screen = common_screen([sel.f_twin, sel.b_twin, sel.f2, sel.b2, *sel.dim])
+    print(f"Pre-registered round 2, model {cfg.name}")
+    print("training twins: " + ", ".join(session_conditions(s) for s in (sel.f_twin, sel.b_twin)))
+    for tag, s in (("F2", sel.f2), ("B2", sel.b2), ("D1", sel.dim[0]), ("D2", sel.dim[1])):
+        print(f"  {tag}: {session_conditions(s)}")
+    h2, h3 = run_h2(sel, cfg, screen), run_h3(sel, cfg, screen)
+    print(f"\n== H2: calibrate in the lighting you will use ({h2['n_targets']} test targets) ==")
+    print(f"error trained on the same-lighting twin {h2['err_same']:.2f} deg; on the other-lighting session "
+          f"{h2['err_other']:.2f} deg")
+    print(f"d = err(other) - err(same) = {h2['mean_d']:+.2f} deg, 95% CI [{h2['ci'][0]:+.2f}, {h2['ci'][1]:+.2f}]; "
+          f"per test session (F2, B2): {', '.join(f'{x:+.2f}' for x in h2['per_session_d'])}")
+    print(f"\n== H3: brightness gate ({h3['n_gated']} gated vs {h3['n_below']} below-gate targets) ==")
+    print("within-session mean error: " + ", ".join(f"{short(k)} {v:.2f}" for k, v in h3["session_means"].items()))
+    print(f"gap = below - gated = {h3['gap']:+.2f} deg, 95% CI [{h3['ci'][0]:+.2f}, {h3['ci'][1]:+.2f}]")
+    rows = []
+    for name, res in (("H2", h2), ("H3", h3)):
+        print(f"\n{name} success criteria (all three required):")
+        for k, ok in res["criteria"].items():
+            print(f"  [{'PASS' if ok else 'FAIL'}] {k}")
+        print(f"{name} is {'SUPPORTED' if res['supported'] else 'NOT SUPPORTED'}. No re-tuning on these sessions.")
+    rows.append({"time": now(), "mode": "h2_cross_lighting", "confirmatory": 1, "config": f"{cfg.name}: err(other) - err(same)",
+                 "n_sessions": 2, "n_targets": h2["n_targets"], "err_deg_mean": h2["mean_d"],
+                 "ci_lo": h2["ci"][0], "ci_hi": h2["ci"][1],
+                 "note": f"preregistered round 2 H2 {'SUPPORTED' if h2['supported'] else 'NOT SUPPORTED'}"})
+    rows.append({"time": now(), "mode": "h3_within", "confirmatory": 1, "config": f"{cfg.name}: err(below gate) - err(gated)",
+                 "n_sessions": 4, "n_targets": h3["n_gated"] + h3["n_below"], "err_deg_mean": h3["gap"],
+                 "ci_lo": h3["ci"][0], "ci_hi": h3["ci"][1],
+                 "note": f"preregistered round 2 H3 {'SUPPORTED' if h3['supported'] else 'NOT SUPPORTED'}"})
+    if args.log:
+        append_rows(rows)
+        print("\nlogged to data/results.csv (confirmatory=1)")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--configs", nargs="+", default=["all"], help=f"names or 'all': {sorted(REGISTRY)}")
@@ -213,10 +264,14 @@ def main() -> int:
                     help="paired comparison; d = err(REF) - err(NEW), positive = NEW better")
     ap.add_argument("--per-target", action="store_true", help="bias/spread table per target")
     ap.add_argument("--preregistered", action="store_true", help="run the pre-registered H1 test")
+    ap.add_argument("--preregistered-2", dest="preregistered_2", action="store_true",
+                    help="run the pre-registered round-2 tests (H2, H3)")
     ap.add_argument("--n-boot", type=int, default=10_000)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-log", dest="log", action="store_false", help="do not append to results.csv")
     args = ap.parse_args()
+    if args.preregistered_2:
+        return run_preregistered_2(args)
     return run_preregistered(args) if args.preregistered else run_exploratory(args)
 
 

@@ -116,3 +116,14 @@ def paired_comparison(ref: TargetStats, new: TargetStats, n_boot: int = 10_000,
         "sessions_new_better": int(sum(x > 0 for x in per_session)),
         "targets_new_better": int((d > 0).sum()),
     }
+
+
+def bootstrap_diff_ci(a: np.ndarray, b: np.ndarray, n_boot: int = 10_000, seed: int = 0,
+                      level: float = 0.95) -> tuple[float, float]:
+    """CI of mean(a) - mean(b), resampling each group (targets) independently with replacement."""
+    a, b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
+    rng = np.random.default_rng(seed)
+    ma = a[rng.integers(0, len(a), size=(n_boot, len(a)))].mean(axis=1)
+    mb = b[rng.integers(0, len(b), size=(n_boot, len(b)))].mean(axis=1)
+    lo, hi = np.quantile(ma - mb, [(1 - level) / 2, 1 - (1 - level) / 2])
+    return float(lo), float(hi)

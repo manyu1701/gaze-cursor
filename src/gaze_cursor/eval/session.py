@@ -9,6 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
+from gaze_cursor.eval.faces import faces_path_for, save_faces
 from gaze_cursor.features import N_FEATURES, assemble, extract_features
 
 SESSIONS_DIR = Path(__file__).resolve().parents[3] / "data" / "sessions"
@@ -23,15 +24,19 @@ class SessionRecorder:
 
     meta: dict
     _rows: list[tuple] = field(default_factory=list)
+    _crops: list = field(default_factory=list)
 
     def add(
         self, t_ms: int, phase: int, target_idx: int, target_xy: tuple[float, float],
         points: np.ndarray | None, transform: np.ndarray | None, features: np.ndarray | None,
         blendshapes: np.ndarray | None = None,
+        crop: tuple[bytes, tuple[int, int, int, int]] | None = None,
     ) -> None:
+        """Add one frame. ``crop`` = (JPEG bytes, box) is saved to the faces sidecar, if given."""
         self._rows.append(
             (t_ms, phase, target_idx, target_xy, points, transform, features, blendshapes)
         )
+        self._crops.append(crop)
 
     def save(self, directory: Path = SESSIONS_DIR) -> Path:
         directory.mkdir(parents=True, exist_ok=True)
@@ -50,6 +55,9 @@ class SessionRecorder:
             blendshapes=np.stack([r[7] if r[7] is not None else np.full(N_BLEND, nan, np.float32) for r in self._rows]) if n else np.zeros((0, N_BLEND), np.float32),
             meta=json.dumps(self.meta),
         )
+        if any(self._crops):
+            save_faces(faces_path_for(path), [c[0] if c else None for c in self._crops],
+                       [c[1] if c else None for c in self._crops])
         return path
 
 
@@ -133,14 +141,19 @@ def load_session(path: Path, recompute_features: bool = True) -> Session:
         )
 
 
+def session_files(directory: Path = SESSIONS_DIR) -> list[Path]:
+    """Session files, oldest first (the ``.faces.npz`` image sidecars are not sessions)."""
+    return sorted(p for p in directory.glob("session_*.npz") if not p.name.endswith(".faces.npz"))
+
+
 def clean_sessions(directory: Path = SESSIONS_DIR) -> list[Session]:
     """All sessions whose targets were drawn 1:1 on the display, oldest first."""
-    sessions = [load_session(p) for p in sorted(directory.glob("session_*.npz"))]
+    sessions = [load_session(p) for p in session_files(directory)]
     return [s for s in sessions if s.is_clean]
 
 
 def latest_session(directory: Path = SESSIONS_DIR) -> Path:
-    found = sorted(directory.glob("session_*.npz"))
+    found = session_files(directory)
     if not found:
         raise FileNotFoundError(f"No sessions in {directory}. Run scripts/calibrate.py first.")
     return found[-1]
