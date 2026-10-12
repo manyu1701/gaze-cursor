@@ -8,7 +8,7 @@ Read this first in a new session, then `CLAUDE.md` and `PLAN.md`. Update it at t
   - Verified so far: `uv run pytest` (6 pass, head-pose math); model downloaded; `FaceTracker` runs on a blank frame (returns None); viewer imports.
   - Live run (user, 2026-10-13): 7 PNGs in `debug/`; the 3 inspected show 30.0 fps, mesh aligned, iris circles centered on pupils, `s` dump works. Head turn showed yaw -32 when face turned toward image-left (mirrored view, so user's left = negative yaw). Only a head turn was checked; pitch/roll signs and the quit check not confirmed.
 - **Next:** plan M1 (plan first, short, list assumptions; don't code until approved).
-- Nothing is committed yet (repo has no commits; Abhimanyu hasn't asked for one).
+- M0 committed and pushed to origin/main (87c5e33). M1 decision: 9 calibration points + separate held-out test points.
 
 ## What exists
 - `pyproject.toml` (uv, Python 3.12, hatchling src layout), `.python-version`, `.gitignore`
