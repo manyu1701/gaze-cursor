@@ -15,6 +15,7 @@ is dark, which gives less light than a bright terminal or the checklist screen d
 from __future__ import annotations
 
 import argparse
+import textwrap
 import time
 from collections import deque
 
@@ -32,7 +33,7 @@ import numpy as np
 
 from gaze_cursor.eval.prereg2 import class_of, lighting_class
 from gaze_cursor.posture import (
-    LIGHT_MIN_FACE, Reference, lighting_label, lighting_stats, note_mismatch, posture_metrics, summarize_lighting, summarize_recording)
+    LIGHT_MIN_FACE, Reference, build_checklist, lighting_label, lighting_stats, note_mismatch, posture_metrics, summarize_lighting, summarize_recording)
 from gaze_cursor.sinks.guide_view import draw_summary, wait_for_key
 from gaze_cursor.sinks.overlay import FullscreenCanvas
 from gaze_cursor.sinks.posture_view import run_posture_check
@@ -67,8 +68,11 @@ def check_screen(cfg: ScreenConfig) -> None:
                 return
 
 
-def check_light(cfg: ScreenConfig) -> None:
-    """Calibration-like screen with a live lighting readout; ESC or Q exits."""
+def check_light(cfg: ScreenConfig, note: str = "", guided: bool = False) -> bool:
+    """Calibration-like screen with a live lighting readout and the front-light guidance.
+
+    ESC or Q returns False. In ``guided`` mode SPACE returns True (continue to the calibration).
+    """
     recent: deque[dict[str, float]] = deque(maxlen=15)
     with Camera() as cam, FaceTracker() as tracker, FullscreenCanvas(cfg) as canvas:
         while True:
@@ -84,21 +88,36 @@ def check_light(cfg: ScreenConfig) -> None:
                 face = float(np.mean([x["face"] for x in recent]))
                 bg = float(np.mean([x["background"] for x in recent]))
                 cls = class_of(face, bg)
+                stats = {"face": face, "background": bg, "ratio": face / bg,
+                         "clipped": float(np.mean([x["clipped"] for x in recent]))}
+                item = [i for i in build_checklist(None, None, [], stats, None, note) if i.key == "light"][0]
                 lines = [f"face {face:.0f}/255   background {bg:.0f}   ratio {face / bg:.2f}   {lighting_label(face, bg)}",
                          f"brightness gate (60): {'passes' if face >= LIGHT_MIN_FACE else 'BLOCKED (SPACE locked, U overrides)'}"
                          f"   round-2 class: {cls or 'none (would be excluded)'}",
                          "dim 25-50 | backlit 60-97 with ratio < 0.6 | front-lit 100-155"]
+                if item.hint:
+                    lines.append("-> " + item.hint)
+                lines += [("tip: " if k == 0 else "     ") + t for k, t in enumerate(textwrap.wrap(item.tip, 110))] if item.tip else []
             else:
                 lines = ["no face detected"]
             for k, line in enumerate(lines):           # small grey text: adds almost no light
                 cv2.putText(img, line, (40, canvas.safe_top + 30 + 28 * k), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                             (150, 150, 150), 1, cv2.LINE_AA)
-            if canvas.show(img) in (27, ord("q")):
-                return
+            footer = "SPACE: continue to calibration     ESC or Q: quit" if guided else "ESC or Q: exit"
+            cv2.putText(img, footer, (40, canvas.size[1] - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                        (150, 150, 150), 1, cv2.LINE_AA)
+            key = canvas.show(img)
+            if key in (27, ord("q")):
+                return False
+            if guided and key == 32:
+                return True
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--guided", action="store_true",
+                    help="(used by Calibrate.command) first set up your lighting on a dark calibration-like "
+                         "screen with live guidance, then continue into the calibration with SPACE")
     ap.add_argument("--check-light", action="store_true",
                     help="show the live lighting as a recording would see it (calibration-like dark screen)")
     ap.add_argument("--check-screen", action="store_true")
@@ -123,7 +142,9 @@ def main() -> None:
         check_screen(cfg)
         return
     if args.check_light:
-        check_light(cfg)
+        check_light(cfg, args.note)
+        return
+    if args.guided and not check_light(cfg, args.note, guided=True):
         return
     seed = int(time.time()) % 2**31 if args.seed is None else args.seed
     record_s = RECORD_S[args.layout]

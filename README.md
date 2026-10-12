@@ -26,6 +26,15 @@ uv run scripts/viewer.py                 # live face mesh, irises, head pose, FP
 
 In the viewer, `q` quits and `s` saves an annotated frame to `debug/`.
 
+## One-click launchers (macOS)
+
+Double-click these in Finder (they open Terminal, which already has the Camera permission):
+
+- **`Calibrate.command`**: asks for an optional note, then (1) a dark, calibration-like screen with a live lighting reading, the brightness gate and front-light tips (SPACE continues, ESC quits), (2) the live setup checklist, (3) the 25-dot calibration. Lighting is captured automatically and saved with the session.
+- **`Run.command`**: starts the live gaze dot with your latest calibration, after the position and lighting check (SPACE starts when every step is green; U runs anyway, with lower accuracy). If you have not calibrated yet it tells you to run `Calibrate.command` first. It will switch to real cursor control when that milestone (M3) is built.
+
+If a launcher does not open, make it executable once with `chmod +x Calibrate.command Run.command`.
+
 ## Measuring gaze (M1)
 
 ```bash
