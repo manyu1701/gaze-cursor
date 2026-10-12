@@ -20,7 +20,8 @@ from gaze_cursor.eval.session import SessionRecorder, clean_sessions
 from gaze_cursor.eval.targets import build_plan
 from gaze_cursor.features import extract_features
 from gaze_cursor.landmarks import FaceTracker
-from gaze_cursor.posture import Reference
+from gaze_cursor.posture import Reference, posture_metrics, summarize_recording
+from gaze_cursor.sinks.guide_view import draw_instructions, draw_summary, wait_for_key
 from gaze_cursor.sinks.overlay import FullscreenCanvas
 from gaze_cursor.sinks.posture_view import run_posture_check
 
@@ -63,7 +64,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=None,
                     help="seed for held-out points and order (default: fresh, stored in the session)")
     ap.add_argument("--no-check", action="store_true",
-                    help="skip the position check against the earlier recorded sessions")
+                    help="skip the setup guidance and the position check against the earlier sessions")
     ap.add_argument("--note", default="", help='condition tag stored in the session, e.g. "evening, lamp"')
     args = ap.parse_args()
     cfg = ScreenConfig.from_system()
@@ -86,12 +87,17 @@ def main() -> None:
         "n_calib": n_calib, "n_test": len(plan) - n_calib,
         "started": time.strftime("%Y-%m-%dT%H:%M:%S"),
     })
+    posture_log: list[dict[str, float]] = []
     with Camera() as cam, FaceTracker() as tracker, FullscreenCanvas(cfg) as canvas:
         rec.meta["window"] = [*canvas.origin, *canvas.size]
         hidden = [p for _, _, p in plan if not canvas.visible(p)]
         if hidden:
             raise SystemExit(f"{len(hidden)} targets fall outside the visible window {rec.meta['window']}")
         earlier = [] if args.no_check else clean_sessions()
+        if not args.no_check and not wait_for_key(canvas, lambda: draw_instructions(canvas),
+                                                  (32,), cancel=(27, ord("q"))):
+            return
+        ref = None
         if earlier:  # sit like in the earlier sessions, so sessions stay comparable
             ref = Reference.from_sessions(earlier)
             check = run_posture_check(cam, tracker, canvas, ref,
@@ -117,7 +123,7 @@ def main() -> None:
                 img = canvas.blank()
                 canvas.dot(img, xy, color=(255, 255, 255) if elapsed < SETTLE_S else (0, 255, 0))
                 canvas.text(img, f"{n + 1}/{len(plan)}", y=canvas.safe_top + 26)  # below the notch
-                if canvas.show(img) == 27:
+                if canvas.show(img) in (27, ord("q")):
                     print("Aborted; nothing saved.")
                     return
                 if frame is None or elapsed < SETTLE_S:
@@ -128,12 +134,21 @@ def main() -> None:
                     continue
                 h, w = frame.image.shape[:2]
                 rec.meta["image_size"] = [w, h]
+                if ref is not None:
+                    posture_log.append(posture_metrics(result.points, result.transform, (w, h)))
                 feats = extract_features(result.points, result.transform, (w, h))
                 rec.add(frame.timestamp_ms, phase, idx, xy, result.points, result.transform,
                         feats, result.blendshapes)
         rec.meta["blendshape_names"] = list(tracker.blendshape_names)
-    path = rec.save()
-    print(f"Saved {path}")
+        summary = summarize_recording(ref, posture_log) if ref is not None else None
+        if summary is not None:
+            rec.meta["posture_summary"] = summary
+        path = rec.save()
+        print(f"Saved {path}")
+        if summary is not None:
+            print(f"posture: in position for {summary['fraction_good'] * 100:.0f}% of frames - {summary['verdict']}")
+            wait_for_key(canvas, lambda: draw_summary(canvas, summary, path.name), (32, 27, ord("q")))
+    return
 
 
 if __name__ == "__main__":

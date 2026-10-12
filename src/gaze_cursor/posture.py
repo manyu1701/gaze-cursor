@@ -157,3 +157,29 @@ class PostureGate:
             if self.in_position and now - self._bad_since >= self.release_s:
                 self.in_position = False
         return self.in_position
+
+
+def summarize_recording(ref: Reference, frames: Sequence[dict[str, float]]) -> dict:
+    """How well did the user hold the reference posture during a recording?
+
+    ``frames`` holds one metrics dict per recorded frame. Returns the fraction of frames with
+    every metric good, the fraction of frames each metric was not good, the metric that drifted
+    most, and a one-line verdict. Purely descriptive: it never changes or filters the data.
+    """
+    if not frames:
+        return {"frames": 0, "fraction_good": 0.0, "verdict": "no face was tracked during the recording",
+                "worst_metric": None, "not_good_fraction": {}, "mean_z": {}}
+    z = np.array([[ref.z(f)[m] for m in METRICS] for f in frames])
+    not_good = np.abs(z) > GOOD_Z
+    frac_good = float((~not_good.any(axis=1)).mean())
+    per_metric = {m: float(not_good[:, i].mean()) for i, m in enumerate(METRICS)}
+    mean_z = {m: float(z[:, i].mean()) for i, m in enumerate(METRICS)}
+    worst = max(METRICS, key=lambda m: abs(mean_z[m]) + per_metric[m])
+    if frac_good >= 0.9:
+        verdict = "good session: you held your position"
+    elif frac_good >= 0.7:
+        verdict = f"mostly in position; {LABELS[worst]} drifted"
+    else:
+        verdict = f"you drifted out of position ({LABELS[worst]} most); consider recording again"
+    return {"frames": len(frames), "fraction_good": frac_good, "verdict": verdict,
+            "worst_metric": worst, "not_good_fraction": per_metric, "mean_z": mean_z}

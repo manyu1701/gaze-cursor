@@ -107,3 +107,52 @@ def test_check_screen_keeps_the_notch_strip_clear() -> None:
                          {"face": 70.0, "background": 140.0, "ratio": 0.5, "clipped": 0.0} if lit else None,
                          "Sit as you did in the earlier sessions, then press SPACE")
         assert (img[: int(cfg.top_inset_pt) + 2] == canvas.blank()[: int(cfg.top_inset_pt) + 2]).all()
+
+
+def _frames(n: int, **shift: float) -> list[dict[str, float]]:
+    base = {"pitch": -7.0, "yaw": 0.0, "roll": 0.0, "distance": 0.066, "x": 0.5, "y": 0.55}
+    return [{**base, **shift} for _ in range(n)]
+
+
+def test_recording_summary_good_session() -> None:
+    from gaze_cursor.posture import summarize_recording
+
+    s = summarize_recording(_ref(), _frames(100))
+    assert s["fraction_good"] == 1.0 and s["verdict"].startswith("good session")
+    assert all(v == 0.0 for v in s["not_good_fraction"].values())
+
+
+def test_recording_summary_names_the_metric_that_drifted() -> None:
+    from gaze_cursor.posture import summarize_recording
+
+    frames = _frames(60) + _frames(40, pitch=0.0)          # last 40% of frames: pitch +7 deg = 2.8 units
+    s = summarize_recording(_ref(), frames)
+    assert s["fraction_good"] == pytest.approx(0.6) and s["worst_metric"] == "pitch"
+    assert s["not_good_fraction"]["pitch"] == pytest.approx(0.4)
+    assert "head pitch" in s["verdict"] and "recording again" in s["verdict"]
+    import json
+    json.dumps(s)                                            # must be storable in the session meta
+
+
+def test_recording_summary_without_frames() -> None:
+    from gaze_cursor.posture import summarize_recording
+
+    assert summarize_recording(_ref(), [])["frames"] == 0
+
+
+def test_guide_screens_keep_the_notch_strip_clear() -> None:
+    from gaze_cursor.config import ScreenConfig
+    from gaze_cursor.posture import summarize_recording
+    from gaze_cursor.sinks.guide_view import SETUP_STEPS, draw_instructions, draw_summary
+    from gaze_cursor.sinks.overlay import FullscreenCanvas
+
+    cfg = ScreenConfig()
+    canvas = FullscreenCanvas(cfg)
+    strip = int(cfg.top_inset_pt) + 2
+    blank = canvas.blank()[:strip]
+    s = summarize_recording(_ref(), _frames(10, pitch=0.0))
+    for img in (draw_instructions(canvas), draw_summary(canvas, s, "session_x.npz"),
+                draw_summary(canvas, summarize_recording(_ref(), []), "session_x.npz")):
+        assert (img[:strip] == blank).all()
+    heads = " ".join(h for h, _ in SETUP_STEPS).lower()
+    assert "all the way back" in heads and "arm's length" in heads
