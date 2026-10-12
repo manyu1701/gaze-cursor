@@ -9,6 +9,7 @@ tall, with a further title strip). All positions given to the drawing helpers ar
 
 from __future__ import annotations
 
+import functools
 import os
 
 import cv2
@@ -32,7 +33,10 @@ def own_window_bounds() -> tuple[int, int, int, int] | None:
     return best[1] if best else None
 
 
+@functools.lru_cache(maxsize=1)
 def _make_window_class():
+    """The NSWindow subclass, created once per process: the Objective-C runtime refuses a second
+    class with the same name, and the guided calibration opens two canvases in one process."""
     import AppKit
     import objc
 

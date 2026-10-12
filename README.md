@@ -157,7 +157,7 @@ PLAN.md, PROGRESS.md             milestones; findings, decisions and pre-registr
 ## Development
 
 ```bash
-uv run pytest                            # 113 unit tests
+uv run pytest                            # 115 unit tests
 ```
 
 ## Roadmap
