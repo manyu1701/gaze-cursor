@@ -75,6 +75,24 @@ def lighting_label(face: float, background: float) -> str:
     return "mixed"
 
 
+_NOTE_WORDS = {"dim": "dim", "backlit": "backlit", "backlight": "backlit", "back-lit": "backlit",
+               "front-lit": "front-lit", "front lit": "front-lit", "frontlit": "front-lit",
+               "front light": "front-lit"}
+
+
+def note_mismatch(note: str, label: str) -> str | None:
+    """A warning if the free-text note names a lighting condition that the captured lighting is not.
+
+    Sessions are classified by the captured lighting, never by the note, so a mislabelled note is a
+    recording mistake worth flagging before or right after the recording.
+    """
+    low = (note or "").lower()
+    mentioned = sorted({cls for word, cls in _NOTE_WORDS.items() if word in low})
+    if mentioned and label not in mentioned:
+        return f"note says {'/'.join(mentioned)} but the lighting is {label}"
+    return None
+
+
 def summarize_lighting(frames: Sequence[dict[str, float]]) -> dict | None:
     """Session-level lighting from per-frame ``lighting_stats`` (JSON-storable), or None."""
     if not frames:
@@ -269,7 +287,7 @@ LIGHT_CHANGE_TOLERANCE = 0.35  # relative face-brightness change vs the calibrat
 
 def build_checklist(ref: Reference | None, metrics: dict[str, float] | None,
                     window: Sequence[dict[str, float]], lighting: dict[str, float] | None,
-                    ref_lighting: dict | None = None) -> list[CheckItem]:
+                    ref_lighting: dict | None = None, note: str = "") -> list[CheckItem]:
     """The five live setup steps, each with a measured status and, when not good, a hint.
 
     Chair contact and arm's length cannot be sensed by a webcam: they are checked indirectly
@@ -294,8 +312,12 @@ def build_checklist(ref: Reference | None, metrics: dict[str, float] | None,
         l_lvl, l_txt, l_hint = "off", "no face detected", "look at the camera"
     else:
         l_value = lighting["face"]
-        l_txt = f"face {lighting['face']:.0f}/255, background {lighting['background']:.0f}"
+        label = lighting_label(lighting["face"], lighting["background"])
+        l_txt = f"face {lighting['face']:.0f}/255, background {lighting['background']:.0f}  ({label})"
         tips = []
+        mismatch = note_mismatch(note, label)
+        if mismatch:
+            tips.append("CHECK YOUR NOTE: " + mismatch)
         if lighting["face"] < LIGHT_GOOD_FACE:
             tips.append(f"more front light helps accuracy (aim for {LIGHT_GOOD_FACE:.0f}+)")
         if lighting["ratio"] < BACKLIT_RATIO:

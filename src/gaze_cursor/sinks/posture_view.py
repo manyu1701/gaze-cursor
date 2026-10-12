@@ -134,7 +134,7 @@ def run_posture_check(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanva
                       ref: Reference | None,
                       title: str = "Set up your position: each step turns green when it is right",
                       ref_lighting: dict | None = None, mode: str = "gate",
-                      override_label: str = "use my current setup") -> PostureResult:
+                      override_label: str = "use my current setup", note: str = "") -> PostureResult:
     """Show the live checklist and return what the user chose.
 
     ``mode="gate"``: SPACE only works once every measured step has been green for a second (it
@@ -160,7 +160,7 @@ def run_posture_check(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanva
             light.append(lighting_stats(cv2.cvtColor(frame.image, cv2.COLOR_BGR2GRAY), result.points))
         else:
             window.clear(); recent.clear(); light.clear()
-        items = build_checklist(ref, _median(recent), list(window), _median(light), ref_lighting)
+        items = build_checklist(ref, _median(recent), list(window), _median(light), ref_lighting, note)
         now = time.monotonic()
         gate.update(now, checklist_ready(items))
         key = canvas.show(draw_checklist(

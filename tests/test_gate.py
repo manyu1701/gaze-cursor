@@ -56,3 +56,36 @@ def test_overexposure_still_blocks() -> None:
 def test_the_live_value_for_the_brightness_bar_is_exposed() -> None:
     assert _item(88.0)[0].value == 88.0
     assert [i for i in build_checklist(_ref(), None, [], None) if i.key == "light"][0].value is None
+
+
+def test_note_mismatch_flags_a_wrong_condition_word() -> None:
+    from gaze_cursor.posture import note_mismatch
+
+    assert note_mismatch("dim D1, screen only", "front-lit") == "note says dim but the lighting is front-lit"
+    assert note_mismatch("Front-lit, lamp close", "dim") == "note says front-lit but the lighting is dim"
+    assert note_mismatch("backlit ambient", "mixed") == "note says backlit but the lighting is mixed"
+    assert note_mismatch("dim D1", "dim") is None and note_mismatch("front lit", "front-lit") is None
+    assert note_mismatch("evening, lamp", "dim") is None and note_mismatch("", "dim") is None   # no condition word
+
+
+def test_checklist_warns_live_when_the_note_disagrees_with_the_lighting() -> None:
+    items = build_checklist(_ref(), _m(), STILL, _light(120.0, 74.0), None, "dim D1, screen only")
+    light = [i for i in items if i.key == "light"][0]
+    assert "(front-lit)" in light.detail and "CHECK YOUR NOTE: note says dim but the lighting is front-lit" in light.tip
+    assert light.level == "good"                                   # a warning, never a block
+    ok = [i for i in build_checklist(_ref(), _m(), STILL, _light(120.0, 74.0), None, "front-lit") if i.key == "light"][0]
+    assert "CHECK YOUR NOTE" not in ok.tip
+
+
+def test_summary_screen_with_notes_keeps_the_notch_clear() -> None:
+    from gaze_cursor.config import ScreenConfig
+    from gaze_cursor.sinks.guide_view import draw_summary
+    from gaze_cursor.sinks.overlay import FullscreenCanvas
+
+    cfg = ScreenConfig()
+    canvas = FullscreenCanvas(cfg)
+    img = draw_summary(canvas, None, "s.npz", {"label": "mixed", "face": 93.0, "background": 148.0},
+                       ["Round-2 class by captured lighting: none, outside every class range (would be excluded)",
+                        "CHECK YOUR NOTE: note says dim but the lighting is mixed"])
+    strip = int(cfg.top_inset_pt) + 2
+    assert (img[:strip] == canvas.blank()[:strip]).all()

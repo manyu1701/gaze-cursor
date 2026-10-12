@@ -23,8 +23,9 @@ from gaze_cursor.features import extract_features
 from gaze_cursor.landmarks import FaceTracker
 import cv2
 
+from gaze_cursor.eval.prereg2 import lighting_class
 from gaze_cursor.posture import (
-    Reference, lighting_stats, posture_metrics, summarize_lighting, summarize_recording)
+    Reference, lighting_stats, note_mismatch, posture_metrics, summarize_lighting, summarize_recording)
 from gaze_cursor.sinks.guide_view import draw_summary, wait_for_key
 from gaze_cursor.sinks.overlay import FullscreenCanvas
 from gaze_cursor.sinks.posture_view import run_posture_check
@@ -118,7 +119,7 @@ def main() -> None:
             # Live checklist: each setup step turns green as it is satisfied (first session: no
             # earlier sessions to compare position against, so only light and stillness are checked).
             check = run_posture_check(cam, tracker, canvas, ref,
-                                      override_label="calibrate in my current setup")
+                                      override_label="calibrate in my current setup", note=args.note)
             if not check.proceed:
                 return
             if check.own_setup:  # the user chose to calibrate in their current setup: nothing forced
@@ -183,7 +184,18 @@ def main() -> None:
                   f"{lighting['background']:.0f}, ratio {lighting['ratio']:.2f}, clipped {lighting['clipped'] * 100:.1f}%)")
         if summary is not None:
             print(f"posture: in position for {summary['fraction_good'] * 100:.0f}% of frames - {summary['verdict']}")
-        wait_for_key(canvas, lambda: draw_summary(canvas, summary, path.name, lighting), (32, 27, ord("q")))
+        notes = []
+        if lighting is not None:
+            cls = lighting_class(rec.meta)
+            names = {"F": "front-lit (F)", "B": "backlit (B)", "D": "dim (D)"}
+            notes.append("Round-2 class by captured lighting: " + (names[cls] if cls else
+                         "none, outside every class range (would be excluded)"))
+            mismatch = note_mismatch(args.note, lighting["label"])
+            if mismatch:
+                notes.append("CHECK YOUR NOTE: " + mismatch)
+        for line in notes:
+            print(line)
+        wait_for_key(canvas, lambda: draw_summary(canvas, summary, path.name, lighting, notes), (32, 27, ord("q")))
     return
 
 

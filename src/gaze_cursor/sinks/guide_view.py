@@ -15,7 +15,7 @@ def _put(img: np.ndarray, text: str, org: tuple[int, int], color=WHITE, scale: f
 
 
 def draw_summary(canvas: FullscreenCanvas, summary: dict | None, saved: str,
-                 lighting: dict | None = None) -> np.ndarray:
+                 lighting: dict | None = None, notes: list[str] | None = None) -> np.ndarray:
     """End-of-session feedback: how well the posture was held, per metric."""
     img = canvas.blank()
     left = max((canvas.size[0] - 900) // 2, 40)
@@ -46,6 +46,8 @@ def draw_summary(canvas: FullscreenCanvas, summary: dict | None, saved: str,
     if lighting is not None:
         _put(img, f"Lighting captured: {lighting['label']} (face {lighting['face']:.0f}/255, background "
                   f"{lighting['background']:.0f}); saved with the session", (left, canvas.size[1] - 110), GREY, 0.62)
+    for k, line in enumerate(notes or []):  # e.g. the round-2 class and any note/lighting mismatch
+        _put(img, line, (left, canvas.size[1] - 150 - 30 * k), AMBER, 0.68, 2)
     canvas.text(img, "SPACE or ESC: finish", y=canvas.size[1] - 40)
     return img
 
