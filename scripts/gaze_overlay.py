@@ -17,7 +17,9 @@ from gaze_cursor.config import ScreenConfig
 from gaze_cursor.eval.session import CALIB, latest_session, load_session
 from gaze_cursor.features import FEATURE_SETS, assemble, extract_features
 from gaze_cursor.landmarks import FaceTracker
+from gaze_cursor.posture import Reference, posture_metrics
 from gaze_cursor.sinks.overlay import FullscreenCanvas
+from gaze_cursor.sinks.posture_view import draw_chip, run_posture_check
 
 OOD_Z = 4.0  # warn when a live feature is this many calibration std-devs from its mean
 SMOOTH_FRAMES = 5  # simple moving average; One-Euro comes in M2
@@ -30,6 +32,8 @@ def main() -> None:
     ap.add_argument("--features", choices=FEATURE_SETS, default="gaze",
                     help="default 'gaze' (iris only): raw head pose made the dot slam to the screen "
                          "edge as soon as posture changed from calibration")
+    ap.add_argument("--no-check", action="store_true",
+                    help="skip the position check and the live posture hints")
     args = ap.parse_args()
 
     session = load_session(args.session or latest_session())
@@ -41,12 +45,23 @@ def main() -> None:
     recent: deque[np.ndarray] = deque(maxlen=SMOOTH_FRAMES)
     mu, sd = x_tr.mean(axis=0), x_tr.std(axis=0) + 1e-9
     worst_z = 0.0
+    # The model is only as good as the posture it was trained in: compare against that session.
+    ref = None if args.no_check else Reference.from_sessions([session])
 
     with Camera() as cam, FaceTracker() as tracker, FullscreenCanvas(cfg) as canvas:
+        if ref is not None:
+            check = run_posture_check(cam, tracker, canvas, ref,
+                                      title="Sit as you did when you calibrated this model")
+            if not check.proceed:
+                return
+        metrics = None
         while True:
             frame = cam.read()
-            if frame is not None and (result := tracker.process(frame)) is not None:
+            result = tracker.process(frame) if frame is not None else None
+            metrics = None
+            if frame is not None and result is not None:
                 h, w = frame.image.shape[:2]
+                metrics = posture_metrics(result.points, result.transform, (w, h))
                 feats = extract_features(result.points, result.transform, (w, h))
                 if feats is not None:
                     names = tuple(session.meta["blendshape_names"])
@@ -58,6 +73,8 @@ def main() -> None:
                 x, y = np.mean(recent, axis=0)
                 canvas.dot(img, (np.clip(x, 0, cfg.width_px), np.clip(y, 0, cfg.height_px)),
                            color=(0, 255, 0), r=20)
+            if ref is not None:
+                draw_chip(canvas, img, ref, metrics)
             canvas.text(img, "q / ESC to quit", y=canvas.size[1] - 30)
             if worst_z > OOD_Z:
                 canvas.text(img, f"input is {worst_z:.0f} sd from calibration: sit as you did, or recalibrate",

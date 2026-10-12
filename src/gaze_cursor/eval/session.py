@@ -65,6 +65,8 @@ class Session:
     target_xy: np.ndarray
     features: np.ndarray
     blendshapes: np.ndarray
+    points: np.ndarray | None = None      # (n, 478, 3) landmarks; NaN rows have no face
+    transform: np.ndarray | None = None   # (n, 4, 4) head transform
 
     @property
     def valid(self) -> np.ndarray:
@@ -127,7 +129,7 @@ def load_session(path: Path, recompute_features: bool = True) -> Session:
         return Session(
             path=path, meta=meta, t_ms=d["t_ms"], phase=d["phase"],
             target_idx=d["target_idx"], target_xy=d["target_xy"], features=features,
-            blendshapes=d["blendshapes"],
+            blendshapes=d["blendshapes"], points=d["points"], transform=d["transform"],
         )
 
 

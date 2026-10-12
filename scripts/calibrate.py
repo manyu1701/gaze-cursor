@@ -16,11 +16,13 @@ import cv2
 
 from gaze_cursor.capture import Camera
 from gaze_cursor.config import ScreenConfig
-from gaze_cursor.eval.session import SessionRecorder
+from gaze_cursor.eval.session import SessionRecorder, clean_sessions
 from gaze_cursor.eval.targets import build_plan
 from gaze_cursor.features import extract_features
 from gaze_cursor.landmarks import FaceTracker
+from gaze_cursor.posture import Reference
 from gaze_cursor.sinks.overlay import FullscreenCanvas
+from gaze_cursor.sinks.posture_view import run_posture_check
 
 SETTLE_S = 0.7   # eyes travel to the new dot; not recorded
 RECORD_S = {"v1": 1.5, "v2": 1.0}  # error rises after ~1.2 s on a fixation, so v2 records less
@@ -60,6 +62,8 @@ def main() -> None:
                          "order, 1 s each; v1: the M1 layout (9 + 12, 1.5 s)")
     ap.add_argument("--seed", type=int, default=None,
                     help="seed for held-out points and order (default: fresh, stored in the session)")
+    ap.add_argument("--no-check", action="store_true",
+                    help="skip the position check against the earlier recorded sessions")
     ap.add_argument("--note", default="", help='condition tag stored in the session, e.g. "evening, lamp"')
     args = ap.parse_args()
     cfg = ScreenConfig.from_system()
@@ -87,16 +91,25 @@ def main() -> None:
         hidden = [p for _, _, p in plan if not canvas.visible(p)]
         if hidden:
             raise SystemExit(f"{len(hidden)} targets fall outside the visible window {rec.meta['window']}")
-        # Wait for SPACE.
-        while True:
-            img = canvas.blank()
-            canvas.text(img, "Sit ~60 cm away, head still. Press SPACE to start, ESC to abort.")
-            key = canvas.show(img)
-            cam.read()
-            if key == 27:
+        earlier = [] if args.no_check else clean_sessions()
+        if earlier:  # sit like in the earlier sessions, so sessions stay comparable
+            ref = Reference.from_sessions(earlier)
+            check = run_posture_check(cam, tracker, canvas, ref,
+                                      title="Sit as you did in the earlier sessions, then press SPACE")
+            if not check.proceed:
                 return
-            if key == 32:
-                break
+            rec.meta["posture_check"] = {"in_position": check.in_position,
+                                         "reference_sessions": ref.n_sessions}
+        else:  # first ever session, or --no-check
+            while True:
+                img = canvas.blank()
+                canvas.text(img, "Sit ~60 cm away, head still. Press SPACE to start, ESC to abort.")
+                key = canvas.show(img)
+                cam.read()
+                if key == 27:
+                    return
+                if key == 32:
+                    break
         for n, (phase, idx, xy) in enumerate(plan):
             start = time.monotonic()
             while (elapsed := time.monotonic() - start) < SETTLE_S + record_s:
