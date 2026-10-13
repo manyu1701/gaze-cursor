@@ -7,8 +7,8 @@
   changing any event. It needs **Input Monitoring** permission for the app running Python (Terminal).
 
 Hotkeys (defaults): tap **Right Command** alone = warp to gaze (Abhimanyu's choice after the first live
-try; Right Option before); Ctrl+Option+G = on / off;
-Ctrl+Option+R = recalibrate (9 quick dots); Ctrl+Option+Q = quit.
+try; Right Option before); Cmd+Option+G = on / off;
+Cmd+Option+R = recalibrate (9 quick dots); Cmd+Option+Q = quit.
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ class HotkeyDetector:
 
     def key_down(self, keycode: int, flags: int, t_ms: float) -> list[InputEvent]:
         self._down_at = None                                   # the modifier was used with a key
-        if flags & FLAG_CONTROL and flags & FLAG_OPTION:
+        if flags & FLAG_COMMAND and flags & FLAG_OPTION:   # Cmd+Option+G / R / Q (Abhimanyu)
             if keycode == KEY_G:
                 return [InputEvent("toggle", t_ms)]
             if keycode == KEY_Q:

@@ -39,6 +39,15 @@ def test_other_modifiers_do_not_warp() -> None:
     assert d.flags_changed(RIGHT_OPTION_KEYCODE, 0, 300) == []
 
 
+def test_cmd_option_r_with_the_right_command_key_recalibrates_and_does_not_jump() -> None:
+    d = HotkeyDetector()
+    d.flags_changed(RIGHT_COMMAND_KEYCODE, FLAG_COMMAND, 0)              # right Cmd down
+    d.flags_changed(RIGHT_OPTION_KEYCODE, FLAG_COMMAND | FLAG_OPTION, 50)
+    assert [e.kind for e in d.key_down(15, FLAG_COMMAND | FLAG_OPTION, 100)] == ["recalibrate"]
+    d.flags_changed(RIGHT_OPTION_KEYCODE, FLAG_COMMAND, 150)
+    assert d.flags_changed(RIGHT_COMMAND_KEYCODE, 0, 200) == []          # not a jump tap
+
+
 def test_right_option_can_still_be_chosen() -> None:
     d = HotkeyDetector("right_option")
     d.flags_changed(RIGHT_OPTION_KEYCODE, FLAG_OPTION, 0)
@@ -47,10 +56,11 @@ def test_right_option_can_still_be_chosen() -> None:
 
 def test_toggle_quit_and_clicks() -> None:
     d = HotkeyDetector()
-    both = FLAG_CONTROL | FLAG_OPTION
+    both = FLAG_COMMAND | FLAG_OPTION
     assert [e.kind for e in d.key_down(KEY_G, both, 1)] == ["toggle"]
     assert [e.kind for e in d.key_down(KEY_Q, both, 2)] == ["quit"]
-    assert d.key_down(KEY_Q, FLAG_CONTROL, 3) == []                     # Ctrl+Q alone is not ours
+    assert d.key_down(KEY_Q, FLAG_COMMAND, 3) == []                     # Cmd+Q alone is not ours
+    assert d.key_down(KEY_G, FLAG_CONTROL | FLAG_OPTION, 3) == []       # the old Ctrl+Option combos are off
     (c,) = d.mouse_down((10.5, 20.0), "left", 4)
     assert (c.kind, c.xy, c.button, c.t_ms) == ("click", (10.5, 20.0), "left", 4)
 

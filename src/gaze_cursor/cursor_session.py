@@ -97,7 +97,7 @@ class CursorSession:
         if self.dot is None or now_ms - self.last_good_ms > STALE_MS:
             return None, "face not tracked"
         if self.worst_z > OOD_Z:
-            return None, "eyes outside the calibrated range: recalibrate (Ctrl+Option+R)"
+            return None, "eyes outside the calibrated range: recalibrate (Cmd+Option+R)"
         return (float(self.dot[0]), float(self.dot[1])), ""
 
     def handle(self, event: InputEvent, now_ms: float) -> tuple[str, tuple[float, float] | None]:
@@ -129,12 +129,12 @@ class CursorSession:
     def status_lines(self) -> list[tuple[str, str]]:
         """(text, level) with level in ok / warn / off."""
         if not self.enabled:
-            return [("gaze warp OFF (Ctrl+Option+G)", "off")]
+            return [("gaze warp OFF (Cmd+Option+G)", "off")]
         lines = [("gaze warp ON: tap Right Command", "ok")]
         if self.dot is None or self.raw is None:
             lines.append(("face not tracked", "warn"))
         if self.moved():
-            lines.append(("you moved since calibrating (Ctrl+Option+R)", "warn"))
+            lines.append(("you moved since calibrating (Cmd+Option+R)", "warn"))
         if self.message:
             lines.append((self.message, "warn" if self.message.startswith("no jump") else "ok"))
         return lines
