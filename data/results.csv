@@ -72,3 +72,5 @@ time,mode,confirmatory,config,session,model,features_set,alpha,n_sessions,n_targ
 2026-10-13T12:48:01,positions_A,0,geo_a1,,geo,geo,1,6,150,,,,,,,,17.3058,,,,,15.6498,18.9855,"leave-one-position-out on set A; C 12.56, N 35.58, R 5.50, L 13.94, Rt 25.35, Lo 10.91"
 2026-10-13T12:48:01,positions_A,0,geo_a10,,geo,geo,10,6,150,,,,,,,,17.3058,,,,,15.6498,18.9854,"leave-one-position-out on set A; C 12.56, N 35.58, R 5.50, L 13.94, Rt 25.35, Lo 10.91"
 2026-10-13T12:48:01,positions_A,0,geo_a100,,geo,geo,100,6,150,,,,,,,,17.3055,,,,,15.6495,18.9852,"leave-one-position-out on set A; C 12.56, N 35.58, R 5.50, L 13.94, Rt 25.35, Lo 10.91"
+2026-10-13T14:06:14,h4_position_cost,1,gaze_a10(C only): err(displaced) - err(C2),,,,,6,150,,,,,,,,1.9374,,,,,1.1321,2.6518,preregistered round 3 H4 SUPPORTED
+2026-10-13T14:06:14,h5_lopo,1,gaze_a10 pooled - gaze_a10 fresh on 9 dots,,,,,13,80,,,,,,,,1.2904,,,,,0.8030,1.7731,preregistered round 3 H5 SUPPORTED; 5/5 sessions
