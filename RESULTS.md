@@ -1,4 +1,4 @@
-# M2 results: what changed accuracy, and by how much
+# Results (M2 and M3 round 4): what changed accuracy, and by how much
 
 Webcam gaze tracking on a MacBook Air (built-in camera, 1470 x 956 pt screen, ~60 cm viewing distance),
 one person, recorded 2026-10-13 (round 4 / H6: 2026-10-13 to 10-14). All errors are in **degrees of visual angle** (1 deg is about 1 cm /
