@@ -166,6 +166,19 @@ class FullscreenCanvas:
         cv2.circle(img, c, r, color, 2, cv2.LINE_AA)
         cv2.circle(img, c, 3, (0, 0, 255), -1, cv2.LINE_AA)
 
+    def box(self, img: np.ndarray, center: tuple[float, float], half: float, color=(255, 255, 255),
+            thickness: int = 3) -> None:
+        """A square of side ``2 * half`` screen points centred at ``center``; ``thickness=-1`` fills it."""
+        x, y = self._px(center)
+        h = int(round(half))
+        cv2.rectangle(img, (x - h, y - h), (x + h, y + h), color, thickness, cv2.LINE_AA)
+
+    def marker(self, img: np.ndarray, xy: tuple[float, float], color=(255, 255, 0), r: int = 10) -> None:
+        """A filled dot with a dark rim (the live gaze position)."""
+        c = self._px(xy)
+        cv2.circle(img, c, r + 2, (0, 0, 0), -1, cv2.LINE_AA)
+        cv2.circle(img, c, r, color, -1, cv2.LINE_AA)
+
     def text(self, img: np.ndarray, msg: str, y: int | None = None) -> None:
         """Centered text; ``y`` is in canvas pixels from the top of the window."""
         y = self.size[1] // 2 if y is None else y

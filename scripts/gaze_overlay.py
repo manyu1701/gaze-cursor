@@ -12,6 +12,7 @@ Usage:
   uv run scripts/gaze_overlay.py                    # quick 9-dot calibration, then the dot
   uv run scripts/gaze_overlay.py --latest           # use the latest full calibration instead
   uv run scripts/gaze_overlay.py session.npz [--model ridge|poly2] [--features gaze|...]
+  uv run scripts/gaze_overlay.py --latest --pool    # all calibrations in the latest one's lighting
 
 Keys: SPACE start, L latest full calibration (start screen), R recalibrate, T targets test,
 A accuracy test, P path test, ESC ends a test, q quits.
@@ -39,6 +40,8 @@ from gaze_cursor.features import FEATURE_SETS, assemble, extract_features
 from gaze_cursor.filters import RUN_FILTER, make_filter
 from gaze_cursor.eval.results_log import append_rows, now
 from gaze_cursor.landmarks import FaceTracker
+from gaze_cursor.live import fit_live_model
+from gaze_cursor.pool import POOL_CONFIG
 from gaze_cursor.livetest import (
     ACC_SHOW_MS, ACC_SIZE_DEG, BOX_SIZES_DEG, TIMEOUT_MS, WITHIN_DEG, BoxTrial, LiveStats, PathTarget,
     accuracy_result, head_moved, head_shift, make_boxes, pursuit_summary, summarize_accuracy, summarize_boxes,
@@ -201,6 +204,9 @@ def main() -> None:
     ap.add_argument("--features", choices=FEATURE_SETS, default="gaze",
                     help="(full calibration only) default 'gaze' (iris only): raw head pose made the dot slam "
                          "to the screen edge as soon as posture changed from calibration")
+    ap.add_argument("--pool", action="store_true",
+                    help=f"(full calibration only) train {POOL_CONFIG} on every clean calibration recorded in the "
+                         "same lighting as the latest (or given) one, instead of that one alone (experimental)")
     ap.add_argument("--no-check", action="store_true",
                     help="(full calibration only) skip the position check and the live posture hints")
     args = ap.parse_args()
@@ -225,11 +231,11 @@ def main() -> None:
                 return
             if (cfg.width_px, cfg.height_px) != (session.meta["screen"]["width_px"], session.meta["screen"]["height_px"]):
                 print("warning: screen size differs from the session's; recalibrate for accurate results")
-            features = args.features
-            x_tr, y_tr, _ = session.select(CALIB, features)
-            model = GazeModel(args.model).fit(x_tr, y_tr)
-            # The model is only as good as the posture it was trained in: compare against that session.
-            ref = None if args.no_check else Reference.from_sessions([session])
+            live = fit_live_model(session, cfg, pool=args.pool, feature_set=args.features, kind=args.model)
+            model, x_tr, features = live.model, live.x_train, live.feature_set
+            print("model: " + live.label)
+            # The model is only as good as the postures it was trained in: compare against those sessions.
+            ref = None if args.no_check else Reference.from_sessions(live.sessions)
             if ref is not None:
                 check = run_posture_check(cam, tracker, canvas, ref,
                                           title="Sit as you did when you calibrated this model",

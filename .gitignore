@@ -13,3 +13,5 @@ data/excluded/*
 !data/excluded/.gitkeep
 data/quick/
 .DS_Store
+data/tasks/*
+!data/tasks/.gitkeep

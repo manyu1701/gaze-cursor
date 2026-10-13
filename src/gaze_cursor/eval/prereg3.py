@@ -51,6 +51,12 @@ PREREG3_REFERENCE = "gaze_a10"
 # by eval.correction.choose_dots from its calibration targets; REF gets no dots.
 PREREG3_DOTS = 9
 PREREG3_METHOD = "fresh"
+# An EARLIER, separate freeze of the same round (claude.ai session, commit dfa75ff, 05:57 IST), made on a
+# diverged branch the protocol above was written without: candidate gaze_a100 trained on all other
+# calibrations (pooled, no dots) vs REF on the set-B centre session only. Set B (13:37-14:05) postdates
+# both freezes. Kept so it can be run once and reported next to the protocol above.
+EARLIER_FREEZE_CANDIDATE = "gaze_a100"
+EARLIER_FREEZE_AFTER = "2026-10-13T06:00:00"
 
 NEAR_MIN, FAR_MAX = 1.12, 0.90            # distance relative to C
 SHIFT_MIN = 0.07                          # |dx| for L / Rt, dy for Lo (fraction of the frame)
@@ -256,6 +262,31 @@ def run_h5(a: PositionSet, b: PositionSet, ref: Config, cand: Config, screen: Sc
             "vs_c_only": paired_comparison(c_only, c, N_BOOT, SEED),
             "vs_refit": paired_comparison(refit, c, N_BOOT, SEED),
             "own_16": float(own.err_deg.mean()), "cand_c2": float(cand_c2.err_deg.mean())}
+
+
+def run_h5_earlier_freeze(a: PositionSet, b: PositionSet, ref: Config, cand: Config,
+                          screen: ScreenConfig) -> dict:
+    """H5 as frozen in dfa75ff: CAND trained on all of set A + set B except the test session versus REF
+    trained on set-B C only (today's Run), each displaced set-B session held out in turn; paired on its
+    targets. Same criteria as ``run_h5``."""
+    b_order = ["C", *DISPLACED, "C2"]
+    sessions = [b.sessions[k] for k in b_order] + [a.sessions[k] for k in SLOTS_A]
+    test_idx = list(range(1, 1 + len(DISPLACED)))
+    today = concat([fit_predict(sessions, ref, [0], t, screen) for t in test_idx])
+    c = concat(leave_one_position_out(sessions, test_idx, cand, screen))
+    comp = paired_comparison(today, c, N_BOOT, SEED)
+    crit = {
+        "(a) CI lower bound > 0": comp["ci_lo"] > 0,
+        f"(b) mean d >= {H5_MIN_GAIN_DEG} deg": comp["mean_diff_deg"] >= H5_MIN_GAIN_DEG,
+        f"(c) d > 0 in >= {H5_MIN_SESSIONS} of 5 test sessions": comp["sessions_new_better"] >= H5_MIN_SESSIONS,
+    }
+    # Reported, not criteria: REF on the same pool, CAND on C2.
+    same_pool = concat(leave_one_position_out(sessions, test_idx, ref, screen))
+    cand_c2 = leave_one_position_out(sessions, [len(DISPLACED) + 1], cand, screen)[0]
+    return {"comparison": comp, "criteria": crit, "supported": all(crit.values()),
+            "err_ref": float(today.err_deg.mean()), "err_cand": float(c.err_deg.mean()),
+            "per_position": dict(zip(DISPLACED, comp["per_session_diff_deg"])),
+            "vs_same_pool": paired_comparison(same_pool, c, N_BOOT, SEED), "cand_c2": float(cand_c2.err_deg.mean())}
 
 
 def few_dot(sessions: Sequence[Session], config: Config, train: Sequence[int], test: int, screen: ScreenConfig,

@@ -1,5 +1,4 @@
 import os
-import shutil
 import stat
 import subprocess
 from pathlib import Path
@@ -7,7 +6,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-LAUNCHERS = ("Calibrate.command", "Run.command")
+LAUNCHERS = ("Calibrate.command", "Run.command", "Practice.command")
 
 
 @pytest.mark.parametrize("name", LAUNCHERS)
@@ -30,3 +29,8 @@ def test_calibrate_launcher_runs_the_guided_calibration_with_a_note() -> None:
 def test_run_launcher_starts_the_overlay_without_needing_a_full_calibration() -> None:
     text = (ROOT / "Run.command").read_text()
     assert "scripts/gaze_overlay.py" in text and "No calibration found yet" not in text   # quick 9 dots first
+
+
+def test_practice_launcher_starts_target_practice() -> None:
+    text = (ROOT / "Practice.command").read_text()
+    assert "scripts/target_practice.py" in text and "No calibration found yet" in text

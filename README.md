@@ -29,12 +29,13 @@ uv run scripts/viewer.py                 # live face mesh, irises, head pose, FP
 
 ### One-click launchers
 
-Double-click these in Finder. They open Terminal, which already has the Camera permission. If macOS will not open one, run `chmod +x Calibrate.command Run.command` once.
+Double-click these in Finder. They open Terminal, which already has the Camera permission. If macOS will not open one, run `chmod +x Calibrate.command Run.command Practice.command` once.
 
 | Launcher | What it does |
 | --- | --- |
 | **`Calibrate.command`** | Asks for an optional note, then (1) a dark, calibration-like screen with a live lighting reading, the brightness gate and front-light tips (SPACE continues, ESC quits), (2) the live setup checklist, (3) the 25-dot calibration. The lighting is captured automatically and saved with the session. |
 | **`Run.command`** | Starts the live gaze dot with your latest calibration, after a position and lighting check. If you have not calibrated yet it tells you to run `Calibrate.command` first. It will switch to real cursor control when M3 is built. |
+| **`Practice.command`** | Target practice: a box appears and you move the gaze dot into it with your eyes, holding it until the box fills. The box shrinks after hits and grows after misses; the summary tells you the smallest box you can reliably hit, how fast you hit, how far the dot sits from where you look, and whether it is systematically shifted. Uses your latest calibration (`--pool` for all calibrations in the same lighting). |
 
 ## Recording a session
 
@@ -90,17 +91,20 @@ Each session also saves a compressed crop of your face for every frame (`<sessio
 
 ```bash
 uv run scripts/gaze_overlay.py           # live gaze dot, using the latest session (q or ESC quits)
+uv run scripts/gaze_overlay.py --pool    # experimental: all calibrations recorded in the same lighting
+uv run scripts/target_practice.py        # move the dot into boxes; measures what you can actually hit
+uv run scripts/positions.py              # recent sessions: lighting, measured head position, role in the position test
 uv run scripts/check_setup.py            # live posture gauges against your recorded sessions
 uv run scripts/benchmark.py              # fit on calibration, report error on held-out dots
 uv run scripts/evaluate.py               # all clean sessions: within, leave-one-target-out, leave-one-session-out
 ```
 
-- **`gaze_overlay.py [session.npz] [--model ridge|poly2] [--features ...]`**: the live dot. It defaults to the `gaze` feature set (iris only) because raw head pose makes the dot jump when your posture drifts from calibration. Before it starts it runs the position and lighting check against the session its model was trained on (U runs anyway, with lower accuracy), and it keeps a small posture hint in the corner while you use it.
+- **`gaze_overlay.py [session.npz] [--model ridge|poly2] [--features ...]`**: the live dot. It defaults to the `gaze` feature set (iris only) because raw head pose makes the dot jump when your posture drifts from calibration. Before it starts it runs the position and lighting check against the session its model was trained on (U runs anyway, with lower accuracy), and it keeps a small posture hint in the corner while you use it. `--pool` trains on every clean calibration recorded in the same lighting as the latest one (the round-3 candidate, under test; see PROGRESS.md).
 - **`check_setup.py [--last N]`**: the posture check on its own. The reference position is computed from your recorded sessions, so it updates itself as you add sessions.
 - **`benchmark.py [session.npz] [--model ridge|poly2] [--alpha A] [--features ...]`**: offline, no camera. Prints error (px, cm, degrees; mean and median) and jitter, and appends a row to `data/results.csv`.
 - **`evaluate.py`**: the evaluation harness. It works per *target* (frames within one fixation are not independent) over all clean sessions, with bootstrap 95% confidence intervals that resample targets.
 
-Feature sets (`--features`): `iris` (iris position, head pose, eye openness; the baseline), `eyes` (drops head pose), `gaze` (iris position only), `blend` (head pose plus face blendshapes), `gaze_blend` (iris position plus eye blendshapes, pose-free), `both` (iris plus blendshapes).
+Feature sets (`--features`): `iris` (iris position, head pose, eye openness; the baseline), `eyes` (drops head pose), `gaze` (iris position only), `blend` (head pose plus face blendshapes), `gaze_blend` (iris position plus eye blendshapes, pose-free), `both` (iris plus blendshapes), and the M2 step-3 experiments `head` (iris, head pose and head position), `ray` and `geo` (gaze-ray models; `geo` needs `--model geo`). On the first position data the head-aware sets lost to plain pooling, so `gaze` stays the default.
 
 ### Evaluation harness options
 
@@ -112,6 +116,8 @@ Feature sets (`--features`): `iris` (iris position, head pose, eye openness; the
 | `--per-target` | Each target's bias and spread. |
 | `--preregistered` | The pre-registered round-1 test (H1), run once; refuses until three layout-v2 sessions exist. |
 | `--preregistered-2` | The pre-registered round-2 lighting tests (H2, H3); refuses until the right sessions exist. |
+| `--positions` | Head-position development on set A: leave-one-position-out, today's centre-only model, own calibration, few-dot correction. Exploratory. |
+| `--preregistered-3` | The pre-registered round-3 position tests (H4, H5), run once on set B. |
 
 Every run is logged with its mode to `data/results.csv`.
 
@@ -125,8 +131,8 @@ capture → landmarks → features → calibration model → smoothing → outpu
 | --- | --- | --- |
 | capture | `capture.py` | Webcam frames with monotonic timestamps |
 | landmarks | `landmarks.py` | MediaPipe FaceLandmarker (Tasks API): 478 face and iris points, 52 blendshape scores, head pose from the transformation matrix |
-| features | `features.py` | Iris position within each eye, head yaw/pitch/roll, eye openness, an optional blendshape subset. Pure functions |
-| calibration | `calibration.py` | Ridge or polynomial-ridge regression from features to screen (x, y) |
+| features | `features.py` | Iris position within each eye, head yaw/pitch/roll, eye openness, head position from the eye spacing, an optional blendshape subset. Pure functions |
+| calibration | `calibration.py` | Ridge or polynomial-ridge regression from features to screen (x, y); an experimental constrained gaze-ray model (`geo`) |
 | smoothing | | One-Euro filter (planned, M2) |
 | output sinks | `sinks/` | On-screen gaze dot today; real cursor from M3 |
 
@@ -143,12 +149,13 @@ Around the pipeline: `posture.py` (setup checklist, reference posture, lighting)
 ## Project layout
 
 ```
-Calibrate.command, Run.command   one-click launchers (macOS)
+Calibrate.command, Run.command, Practice.command   one-click launchers (macOS)
 src/gaze_cursor/                 capture, landmarks, features, calibration, posture, config, eval/, sinks/
-scripts/                         viewer, download_model, calibrate, check_setup, gaze_overlay, benchmark, evaluate
+scripts/                         viewer, download_model, calibrate, check_setup, gaze_overlay, benchmark, evaluate, positions, diagnose_positions, target_practice
 tests/                           pytest suite
 data/sessions/                   recorded sessions and face images (gitignored)
 data/dry_runs/, data/excluded/   practice and excluded sessions (gitignored)
+data/tasks/                      target-practice recordings (gitignored, never used as calibrations)
 data/results.csv                 benchmark and evaluation log
 models/                          downloaded model files (gitignored)
 PLAN.md, PROGRESS.md             milestones; findings, decisions and pre-registrations
@@ -157,7 +164,7 @@ PLAN.md, PROGRESS.md             milestones; findings, decisions and pre-registr
 ## Development
 
 ```bash
-uv run pytest                            # 113 unit tests
+uv run pytest                            # 152 unit tests
 ```
 
 ## Roadmap
