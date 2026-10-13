@@ -81,13 +81,30 @@ Long term the tracker should work with other webcams, extra/external screens, ot
 - **OS-specific code stays in sinks / platform modules** (cursor control, screen geometry, overlay window); the core pipeline stays portable Python.
 - Face recordings are personal data: other people's sessions need consent, stay local and gitignored.
 
+## Learning loop and data strategy (added 2026-10-14)
+
+Every session should make the system smarter, first for the author and later for other people. Design for three levels of learning, and never let a step quietly break them:
+
+- **Session:** adapt to how the user sits right now (click learning, round 4; exists).
+- **Personal (long-term):** a model trained on all of the user's sessions across days and conditions, so each day starts already knowing their eyes; the session level then fine-tunes it. The live model may start fresh, but learned state and labelled data accumulate (see "Keep history").
+- **Population:** a prior learned across many people (a pretrained gaze model first, M3 step 8; other people's data later, M5), refined per person and per session (hierarchical: population -> person -> session). Evaluated leave-one-session-out (personal) and leave-one-person-out (population).
+
+Rules that keep this possible:
+- **Data contract:** every session (calibration, quick calibration, Cursor log, task) is saved in a standard format with labels (dots, clicks, targets), structured condition tags and a **person id**; features in normalised or angular units, not this screen's pixels, where possible. Untagged or person-less data cannot be pooled.
+- **Keep history:** resets, forgetting factors and file overwrites may limit what the *live* model uses, but the raw labelled data and every model state are kept (versioned, reproducible from logs, safe to roll back).
+- **Implicit labels are data:** clicks, recalibration presses, corrections and dwell are logged as labels with their timing; each kind needs its own validity check before it is used for training or evaluation, and a label evaluated against a model that learned from it is biased.
+- **Monitoring:** real-use accuracy (e.g. gaze-to-click error per day) is tracked so degradation is noticed.
+- **Privacy by design:** face images never leave the device; anything shared across people is opt-in, anonymous numeric features and labels only, or learning is federated (on-device updates combined).
+- All of this is evaluated under "Measurement principles" and "Modeling principles" (target / click as the unit, grouped or leave-one-session/person-out, paired with bootstrap CIs); claims go through `preregister`.
+- When planning a step, use the `ds-strategy` skill (or ask the `ds-lead` agent) and report its top opportunities to the author with the plan.
+
 ## Process guardrails (added 2026-10-14)
 
 These exist because two slips happened on 2026-10-13 (two sessions on diverged branches; a plan prerequisite skipped). Follow them:
 
 - **One Claude Code session at a time on this repo.** The session-start hook warns if another session holds `.claude/state/session.lock`; if so, tell the author before changing anything.
-- **Skills** (in `.claude/skills/`): `checkpoint` at every PLAN checkpoint (verify the done-when, record, then stop and report); `preregister` for any claim that will become a finding; `session-intake` for every new recording; `results-update` for any change to RESULTS.md; `plan-audit` at the start of a working session and before closing a milestone.
-- **Reviewers** (in `.claude/agents/`): ask `stats-reviewer` before committing any analysis, evaluation code or results table; ask `plan-reviewer` before reporting a step as done.
+- **Skills** (in `.claude/skills/`): `checkpoint` at every PLAN checkpoint (verify the done-when, record, then stop and report); `preregister` for any claim that will become a finding; `session-intake` for every new recording; `results-update` for any change to RESULTS.md; `plan-audit` at the start of a working session and before closing a milestone; `ds-strategy` when planning a step or milestone (proposes only).
+- **Reviewers** (in `.claude/agents/`): ask `stats-reviewer` before committing any analysis, evaluation code or results table; ask `plan-reviewer` before reporting a step as done; `ds-lead` (read-only) for a data-science second opinion when planning.
 - **Hooks** (`.claude/settings.json`, `.claude/hooks/guard.py`): tests run before every `git commit` in this repo (main checkout or a worktree; the tree being committed is tested; tests that open windows are skipped so a commit cannot disturb a live recording; commits in other repos such as the notes repo are ignored) and block it on failure; recorded data and models cannot be edited; PREREGISTRATIONS.md is append-only; a reminder fires when code changed but PLAN.md / notes were not updated.
 - **Permissions:** force-push, `reset --hard`, `git clean`, branch deletion and history rewrites are denied; `rm -r`, push, merge and rebase ask first.
 - Keep pre-registration for claims; small engineering choices do not need a frozen protocol.
