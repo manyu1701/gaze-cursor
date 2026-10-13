@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import textwrap
+
 import cv2
 import numpy as np
 
@@ -46,8 +48,12 @@ def draw_summary(canvas: FullscreenCanvas, summary: dict | None, saved: str,
     if lighting is not None:
         _put(img, f"Lighting captured: {lighting['label']} (face {lighting['face']:.0f}/255, background "
                   f"{lighting['background']:.0f}); saved with the session", (left, canvas.size[1] - 110), GREY, 0.62)
-    for k, line in enumerate(notes or []):  # e.g. the round-2 class and any note/lighting mismatch
-        _put(img, line, (left, canvas.size[1] - 150 - 30 * k), AMBER, 0.68, 2)
+    lines = []  # e.g. the round-2 class, a note/lighting mismatch, the set-B slot verdict
+    for note in notes or []:
+        color = GREEN if note.startswith("COUNTS") else RED if note.startswith("DOES NOT COUNT") else AMBER
+        lines += [(part, color) for part in textwrap.wrap(note, 80)]
+    for k, (line, color) in enumerate(reversed(lines)):
+        _put(img, line, (left, canvas.size[1] - 150 - 30 * k), color, 0.68, 2)
     canvas.text(img, "SPACE or ESC: finish", y=canvas.size[1] - 40)
     return img
 

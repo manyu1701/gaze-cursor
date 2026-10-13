@@ -5,6 +5,7 @@ from __future__ import annotations
 import textwrap
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import cv2
@@ -134,7 +135,8 @@ def run_posture_check(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanva
                       ref: Reference | None,
                       title: str = "Set up your position: each step turns green when it is right",
                       ref_lighting: dict | None = None, mode: str = "gate",
-                      override_label: str = "use my current setup", note: str = "") -> PostureResult:
+                      override_label: str = "use my current setup", note: str = "",
+                      slot_guide: Callable[[dict[str, float] | None], CheckItem] | None = None) -> PostureResult:
     """Show the live checklist and return what the user chose.
 
     ``mode="gate"``: SPACE only works once every measured step has been green for a second (it
@@ -142,6 +144,7 @@ def run_posture_check(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanva
     proceeds with the current setup (``own_setup=True``, ``reference`` = the current posture, for
     a session recorded in the user's own setup). ESC or Q cancels. ``mode="monitor"``: a plain
     viewer where SPACE or ESC just exits. ``ref`` may be None for the very first session.
+    ``slot_guide`` (recording a set-B position) maps the smoothed live metrics to the slot step.
     """
     gate = PostureGate()
     window: deque[dict[str, float]] = deque(maxlen=STILL_WINDOW_FRAMES)
@@ -160,7 +163,9 @@ def run_posture_check(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanva
             light.append(lighting_stats(cv2.cvtColor(frame.image, cv2.COLOR_BGR2GRAY), result.points))
         else:
             window.clear(); recent.clear(); light.clear()
-        items = build_checklist(ref, _median(recent), list(window), _median(light), ref_lighting, note)
+        live = _median(recent)
+        items = build_checklist(ref, live, list(window), _median(light), ref_lighting, note,
+                                slot_guide(live) if slot_guide else None)
         now = time.monotonic()
         gate.update(now, checklist_ready(items))
         key = canvas.show(draw_checklist(

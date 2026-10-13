@@ -329,3 +329,106 @@ def dot_strategy(sessions: Sequence[Session], config: Config, train: Sequence[in
         truth = np.array([ds.y[dot_rows][ds.target[dot_rows] == t][0] for t in dots])
         pred = apply_correction(pred, fit_correction(mean_pred, truth, method))
     return per_target(pred, ds.y[te], ds.target[te], ds.session[te], screen)
+
+
+# --- Live slot guidance for recording set B (calibration checklist) ---------------------------
+# Guidance only: whether a session counts is decided afterwards by ``select_set_b`` on the session
+# medians. Green needs a margin past the rule, so that a little drift during the recording does not
+# drop the median back across it. The "keep steady" limits are heuristics from the set-A lesson
+# (sideways shifts also moved the face down), not inclusion rules.
+SLOT_AIM = {"N": 1.20, "R": 0.82, "L": 0.10, "Rt": -0.10, "Lo": 0.10}
+RATIO_MARGIN, SHIFT_MARGIN, C2_MARGIN = 0.03, 0.015, 0.7
+STEADY_SHIFT, STEADY_RATIO = 0.05, 0.12
+IPD_CM = 6.3   # only to show shifts in rough centimetres
+
+
+def _cm(dx: float, dy: float, ref: Position, aspect: float) -> tuple[float, float]:
+    """Rough centimetres of a face shift (frame fractions), scaled by the inter-iris distance."""
+    per = IPD_CM / ref.distance
+    return dx * per, dy * aspect * per
+
+
+def slot_guide(slot: str, live: Position | None, ref: Position | None, ref_name: str = "pos C",
+               aspect: float = 720 / 1280):
+    """A checklist step that coaches the user into ``slot`` relative to ``ref`` (set-B C, or set-A C
+    when recording C itself). Levels: good (rule met with margin, everything else steady), adjust,
+    off. ``aspect`` = frame height / width, for the height shown in cm."""
+    from gaze_cursor.posture import CheckItem
+    names = {"C": "normal, centred (as in set A)", "N": "closer", "R": "further back", "L": "shifted to your left",
+             "Rt": "shifted to your right", "Lo": "lower (slouched)", "C2": "back to your pos C position"}
+    title = f"Position {slot}: {names[slot]}"
+    if slot == "C":
+        need = "No rule for C (it is the reference): match set A's C so set B starts from the same place."
+    elif slot == "C2":
+        need = "Rule: distance within 5% of pos C and face within 0.03 of it sideways and in height."
+    elif slot in ("N", "R"):
+        need = (f"Rule: distance {'>=' if slot == 'N' else '<='} x{NEAR_MIN if slot == 'N' else FAR_MAX:.2f} "
+                f"of pos C (aim x{SLOT_AIM[slot]:.2f}). Keep your side and height as in pos C.")
+    else:
+        need = (f"Rule: face moved >= {SHIFT_MIN:.2f} of the frame {'sideways' if slot != 'Lo' else 'down'} "
+                f"from pos C (about {abs(_cm(SHIFT_MIN, 0, ref, aspect)[0]) if ref else 4:.0f} cm; aim "
+                f"{abs(SLOT_AIM[slot]):.2f}). Keep {'your height' if slot != 'Lo' else 'your side'} and distance.")
+    if ref is None:
+        return CheckItem("slot", title, need, "off", f"no {ref_name} session yet",
+                         f"record {ref_name} first: the other positions are measured against it")
+    if live is None:
+        return CheckItem("slot", title, need, "off", "no face detected", "look at the camera")
+    ratio, dx, dy = live.relative_to(ref)
+    xcm, ycm = _cm(dx, dy, ref, aspect)
+    detail = (f"vs {ref_name}: distance x{ratio:.2f}   sideways {abs(xcm):.1f} cm {'left' if xcm > 0 else 'right'}"
+              f"   height {abs(ycm):.1f} cm {'lower' if ycm > 0 else 'higher'}")
+    side = "move to your right" if dx > 0 else "move to your left"
+    height = "sit up a little" if dy > 0 else "sit a little lower"
+    dist = "move back a little" if ratio > 1 else "move a little closer"
+    if slot in ("C", "C2"):
+        tol_r, tol_s = C2_DIST_TOL * C2_MARGIN, C2_SHIFT_TOL * C2_MARGIN
+        off = [(abs(ratio - 1) / tol_r, dist), (abs(dx) / tol_s, side), (abs(dy) / tol_s, height)]
+        worst, hint = max(off)
+        level = "good" if worst <= 1 else "adjust" if worst <= 1 / C2_MARGIN else "off"
+        return CheckItem("slot", title, need, level, detail, "" if level == "good" else hint)
+    if slot in ("N", "R"):
+        primary = ratio
+        rule_ok = ratio >= NEAR_MIN if slot == "N" else ratio <= FAR_MAX
+        margin_ok = ratio >= NEAR_MIN + RATIO_MARGIN if slot == "N" else ratio <= FAR_MAX - RATIO_MARGIN
+        go = "move closer" if slot == "N" else "lean / move further back"
+        steady = [(abs(dx) / STEADY_SHIFT, side), (abs(dy) / STEADY_SHIFT, height)]
+    else:
+        primary = {"L": dx, "Rt": -dx, "Lo": dy}[slot]
+        rule_ok, margin_ok = primary >= SHIFT_MIN, primary >= SHIFT_MIN + SHIFT_MARGIN
+        go = {"L": "shift further to your left", "Rt": "shift further to your right", "Lo": "slouch / sit lower"}[slot]
+        steady = [(abs(ratio - 1) / STEADY_RATIO, dist)]
+        steady.append((abs(dy) / STEADY_SHIFT, height) if slot != "Lo" else (abs(dx) / STEADY_SHIFT, side))
+    s_worst, s_hint = max(steady)
+    if not rule_ok:
+        return CheckItem("slot", title, need, "off", detail, go)
+    if not margin_ok:
+        return CheckItem("slot", title, need, "adjust", detail, f"just inside the rule: {go} a bit more")
+    if s_worst > 1:
+        return CheckItem("slot", title, need, "adjust", detail, f"{s_hint} (keep the rest as in {ref_name})")
+    return CheckItem("slot", title, need, "good", detail)
+
+
+def slot_reference(slot: str, clean: Sequence[Session]) -> tuple[Position | None, str]:
+    """The position a slot is guided against: set A's C for C itself, set B's counted C otherwise."""
+    if slot == "C":
+        s = {x.path.name: x for x in clean}.get(SET_A["C"])
+        return (session_position(s) if s else None), "set-A pos C"
+    b = select_set_b(clean)
+    return b.positions.get("C"), "pos C"
+
+
+def slot_verdict(session_name: str, clean: Sequence[Session]) -> str:
+    """After a recording: does this session count for set B, and if not, why (the frozen rules)."""
+    b = select_set_b(clean)
+    for slot, s in b.sessions.items():
+        if s.path.name == session_name:
+            pos = "" if slot == "C" else f" ({describe(b.positions[slot], b.positions['C'])})"
+            left = [k for k in SLOTS_B if k not in b.sessions]
+            return f"COUNTS as set B {slot}{pos}. " + (f"Still needed: {', '.join(left)}." if left else "Set B is complete.")
+    for name, why in b.excluded:
+        if name == session_name:
+            return f"DOES NOT COUNT: {why}. Re-record this slot (at most 2 retries per slot)."
+    for note in b.ignored:
+        if session_name in note:
+            return "Not used: this slot already has an earlier qualifying session."
+    return "Not a set-B session (no slot in the note, or recorded before the freeze)."

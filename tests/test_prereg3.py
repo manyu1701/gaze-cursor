@@ -237,3 +237,57 @@ def test_dot_strategy_scores_the_same_non_dot_targets_and_fixes_an_offset() -> N
     assert res["fresh"].err_deg.mean() < res["none"].err_deg.mean()
     with pytest.raises(ValueError):
         dot_strategy(a, cfg, [0], 3, SCREEN, 5, "nope")
+
+
+# --- live slot guidance (recording set B) ---------------------------------------------------------
+
+def test_slot_guide_agrees_with_the_inclusion_rules_and_needs_a_margin() -> None:
+    from gaze_cursor.eval.prereg3 import slot_guide
+    c = Position(0.07, 0.5, 0.5)
+    def lvl(slot, d=1.0, dx=0.0, dy=0.0):
+        return slot_guide(slot, Position(0.07 * d, 0.5 + dx, 0.5 + dy), c).level
+    assert lvl("N", 1.0) == "off" and lvl("N", 1.13) == "adjust" and lvl("N", 1.20) == "good"
+    assert lvl("R", 0.95) == "off" and lvl("R", 0.89) == "adjust" and lvl("R", 0.82) == "good"
+    assert lvl("L", dx=0.05) == "off" and lvl("L", dx=0.075) == "adjust" and lvl("L", dx=0.10) == "good"
+    assert lvl("Rt", dx=-0.10) == "good" and lvl("Rt", dx=+0.10) == "off"
+    assert lvl("Lo", dy=0.10) == "good" and lvl("Lo", dy=-0.10) == "off"
+    assert lvl("C2") == "good" and lvl("C2", 1.04) != "good" and lvl("C2", dx=0.05) == "off"
+    # Good per the guide implies the frozen rule holds.
+    for slot, kw in [("N", {"d": 1.2}), ("R", {"d": 0.82}), ("L", {"dx": 0.1}), ("Rt", {"dx": -0.1}),
+                     ("Lo", {"dy": 0.1}), ("C2", {})]:
+        live = Position(0.07 * kw.get("d", 1.0), 0.5 + kw.get("dx", 0.0), 0.5 + kw.get("dy", 0.0))
+        assert slot_guide(slot, live, c).level == "good" and position_ok(slot, live, c)
+
+
+def test_slot_guide_keeps_the_other_directions_steady_and_gives_directions() -> None:
+    from gaze_cursor.eval.prereg3 import slot_guide
+    c = Position(0.07, 0.5, 0.5)
+    sideways_but_dropped = slot_guide("L", Position(0.07, 0.6, 0.6), c)   # the set-A mistake
+    assert sideways_but_dropped.level == "adjust" and "sit up" in sideways_but_dropped.hint
+    closer_but_drifted = slot_guide("N", Position(0.084, 0.58, 0.5), c)
+    assert closer_but_drifted.level == "adjust" and "right" in closer_but_drifted.hint
+    assert "closer" in slot_guide("N", Position(0.07, 0.5, 0.5), c).hint
+    assert "left" in slot_guide("L", Position(0.07, 0.5, 0.5), c).hint
+    missing = slot_guide("N", Position(0.07, 0.5, 0.5), None)
+    assert missing.level == "off" and "record pos C first" in missing.hint
+    assert slot_guide("N", None, c).level == "off"
+
+
+def test_slot_verdict_reports_counted_excluded_and_unrelated_sessions() -> None:
+    from unittest import mock
+    from gaze_cursor.eval import prereg3
+    b = set_b_sessions()
+    wrong = make_session("R", 302, started="2026-10-21T09:58:00", head=HEADS["N"])
+    with mock.patch.object(prereg3, "PREREG3_FREEZE_AFTER", FREEZE), \
+         mock.patch.object(prereg3.select_set_b, "__defaults__", (FREEZE,)):
+        clean = [*b, wrong]
+        assert prereg3.slot_verdict(b[1].path.name, clean).startswith("COUNTS as set B N")
+        assert prereg3.slot_verdict(wrong.path.name, clean).startswith("DOES NOT COUNT")
+        assert prereg3.slot_verdict("session_other.npz", clean).startswith("Not a set-B session")
+
+
+def test_checklist_uses_the_slot_step_in_place_of_distance() -> None:
+    from gaze_cursor.posture import CheckItem, build_checklist
+    item = CheckItem("slot", "Position N: closer", "rule", "good", "x1.20")
+    items = build_checklist(None, None, [], None, slot_item=item)
+    assert items[0] is item and "distance" not in [i.key for i in items]

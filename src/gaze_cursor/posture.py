@@ -287,12 +287,15 @@ LIGHT_CHANGE_TOLERANCE = 0.35  # relative face-brightness change vs the calibrat
 
 def build_checklist(ref: Reference | None, metrics: dict[str, float] | None,
                     window: Sequence[dict[str, float]], lighting: dict[str, float] | None,
-                    ref_lighting: dict | None = None, note: str = "") -> list[CheckItem]:
+                    ref_lighting: dict | None = None, note: str = "",
+                    slot_item: CheckItem | None = None) -> list[CheckItem]:
     """The five live setup steps, each with a measured status and, when not good, a hint.
 
     Chair contact and arm's length cannot be sensed by a webcam: they are checked indirectly
     through distance and stillness, and the on-screen text says so. Without a reference (the very
-    first session) the position steps are ``unknown`` and do not block.
+    first session) the position steps are ``unknown`` and do not block. ``slot_item`` (recording a
+    set-B position) replaces the distance step, and the facing step then checks only yaw and roll,
+    since the face is meant to move in the view.
     """
     def pos(keys: tuple[str, ...], fmt) -> tuple[str, str, str]:
         if ref is None:
@@ -306,7 +309,8 @@ def build_checklist(ref: Reference | None, metrics: dict[str, float] | None,
 
     d_lvl, d_txt, d_hint = pos(("distance",), lambda m, r: f"distance {m['distance'] * 100:.1f}% (usual {r.center['distance'] * 100:.1f}%)")
     p_lvl, p_txt, p_hint = pos(("pitch",), lambda m, r: f"head pitch {m['pitch']:+.1f} deg (usual {r.center['pitch']:+.1f})")
-    f_lvl, f_txt, f_hint = pos(("yaw", "roll", "x", "y"), lambda m, r: f"yaw {m['yaw']:+.1f}, roll {m['roll']:+.1f} deg, face {'centred' if abs(m['x'] - r.center['x']) < 2 * r.scale['x'] and abs(m['y'] - r.center['y']) < 2 * r.scale['y'] else 'off-centre'}")
+    f_keys = ("yaw", "roll") if slot_item else ("yaw", "roll", "x", "y")
+    f_lvl, f_txt, f_hint = pos(f_keys, lambda m, r: f"yaw {m['yaw']:+.1f}, roll {m['roll']:+.1f} deg, face {'centred' if abs(m['x'] - r.center['x']) < 2 * r.scale['x'] and abs(m['y'] - r.center['y']) < 2 * r.scale['y'] else 'off-centre'}")
     l_tip = l_value = None
     if lighting is None:
         l_lvl, l_txt, l_hint = "off", "no face detected", "look at the camera"
@@ -336,10 +340,12 @@ def build_checklist(ref: Reference | None, metrics: dict[str, float] | None,
                     l_hint = (f"lighting differs from calibration (face was {ref_lighting['face']:.0f}, "
                               f"{ref_lighting.get('label', '')}): match it or recalibrate")
     s_lvl, s_txt = still_status(window)
+    first = slot_item or CheckItem(
+        "distance", "Sit all the way back, arm's length from the screen",
+        "Back against the chair; stretch out your arm and your fingertips should just reach the screen. "
+        "I can only check your distance, not the chair.", d_lvl, d_txt, d_hint)
     return [
-        CheckItem("distance", "Sit all the way back, arm's length from the screen",
-                  "Back against the chair; stretch out your arm and your fingertips should just reach the screen. "
-                  "I can only check your distance, not the chair.", d_lvl, d_txt, d_hint),
+        first,
         CheckItem("pitch", "Laptop on a stable desk, lid at the usual angle",
                   "Not on your lap. The angle shows up as your head pitch.", p_lvl, p_txt, p_hint),
         CheckItem("facing", "Face the screen squarely",

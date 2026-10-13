@@ -31,6 +31,7 @@ from gaze_cursor.landmarks import FaceTracker
 import cv2
 import numpy as np
 
+from gaze_cursor.eval import prereg3
 from gaze_cursor.eval.prereg2 import class_of, lighting_class
 from gaze_cursor.posture import (
     LIGHT_MIN_FACE, Reference, build_checklist, lighting_label, lighting_stats, note_mismatch, posture_metrics, summarize_lighting, summarize_recording)
@@ -178,11 +179,21 @@ def main() -> None:
             raise SystemExit(f"{len(hidden)} targets fall outside the visible window {rec.meta['window']}")
         earlier = [] if args.no_check else clean_sessions()
         ref = Reference.from_sessions(earlier) if earlier else None
+        slot = prereg3.slot_from_note(args.note)
+        guide = None
+        if slot and not args.dry_run:
+            # Recording a set-B position: coach the user into it with the frozen inclusion rules.
+            slot_ref, ref_name = prereg3.slot_reference(slot, earlier or clean_sessions())
+            print(f"set B slot {slot}: guided against {ref_name}" + ("" if slot_ref else " (none recorded yet)"))
+            def guide(m, slot=slot, slot_ref=slot_ref, ref_name=ref_name):
+                live = prereg3.Position(m["distance"], m["x"], m["y"]) if m else None
+                return prereg3.slot_guide(slot, live, slot_ref, ref_name)
         if not args.no_check:
             # Live checklist: each setup step turns green as it is satisfied (first session: no
             # earlier sessions to compare position against, so only light and stillness are checked).
             check = run_posture_check(cam, tracker, canvas, ref,
-                                      override_label="calibrate in my current setup", note=args.note)
+                                      override_label="calibrate in my current setup", note=args.note,
+                                      slot_guide=guide)
             if not check.proceed:
                 return
             if check.own_setup:  # the user chose to calibrate in their current setup: nothing forced
@@ -256,6 +267,8 @@ def main() -> None:
             mismatch = note_mismatch(args.note, lighting["label"])
             if mismatch:
                 notes.append("CHECK YOUR NOTE: " + mismatch)
+        if slot and not args.dry_run:
+            notes.append(prereg3.slot_verdict(path.name, clean_sessions()))
         for line in notes:
             print(line)
         wait_for_key(canvas, lambda: draw_summary(canvas, summary, path.name, lighting, notes), (32, 27, ord("q")))
