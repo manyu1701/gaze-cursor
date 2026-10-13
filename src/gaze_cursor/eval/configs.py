@@ -30,6 +30,8 @@ REGISTRY: dict[str, Config] = {c.name: c for c in (
     _c("gaze", 1), _c("gaze", 10), _c("gaze", 100),
     _c("gaze_blend", 10), _c("gaze_blend", 100),
     _c("both", 100),
+    _c("head", 1), _c("head", 10), _c("head", 100),   # M2 step 3a: pooled, head pose + position
+    _c("ray", 1), _c("ray", 10), _c("ray", 100),      # M2 step 3b: linearised gaze ray -> screen
 )}
 
 # Pre-registered comparison (see PROGRESS.md): reference first, candidate second.

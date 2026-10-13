@@ -78,3 +78,26 @@ def test_pose_free_feature_sets() -> None:
     blend = np.zeros((1, len(BLEND_FEATURE_NAMES)))
     assert assemble(base, blend, BLEND_FEATURE_NAMES, "eyes")[0].tolist() == [0, 1, 2, 3, 7, 8]
     assert assemble(base, blend, BLEND_FEATURE_NAMES, "gaze")[0].tolist() == [0, 1, 2, 3]
+
+
+def test_head_and_ray_feature_sets_and_old_sets_unchanged() -> None:
+    from gaze_cursor.features import BLEND_FEATURE_NAMES, N_FEATURES, assemble, ray_features
+
+    base = np.arange(N_FEATURES, dtype=float)[None, :]
+    blend = np.zeros((1, len(BLEND_FEATURE_NAMES)))
+    assert assemble(base, blend, BLEND_FEATURE_NAMES, "iris")[0].tolist() == list(range(9))
+    assert assemble(base, blend, BLEND_FEATURE_NAMES, "both").shape == (1, 9 + len(BLEND_FEATURE_NAMES))
+    assert assemble(base, blend, BLEND_FEATURE_NAMES, "head")[0].tolist() == [0, 1, 2, 3, 4, 5, 6, 9, 10, 11]
+    r = ray_features(base)[0]
+    z = base[0, 11]
+    assert r[:3].tolist() == [9, 10, 11]                                  # eye position
+    assert r[3:7] == pytest.approx(z * base[0, :4])                       # depth x iris offsets
+    assert r[7:] == pytest.approx(z * np.radians(base[0, 4:6]))           # depth x head yaw, pitch
+
+
+def test_head_geometry_is_gaze_independent_and_scales_with_distance() -> None:
+    near = extract_features(_face(), np.eye(4), SIZE)
+    looking = extract_features(_face(iris_dx=0.03, iris_dy=0.01), np.eye(4), SIZE)
+    assert looking[9:] == pytest.approx(near[9:])                        # irises moved, head did not
+    # Eye centres 0.3 of the frame apart: depth = IPD * width / d_px; centred face -> x = 0, y = 0.
+    assert near[9:] == pytest.approx([0.0, 0.0, 6.3 / 0.3], abs=1e-4)

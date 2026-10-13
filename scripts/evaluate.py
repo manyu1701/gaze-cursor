@@ -10,6 +10,8 @@ over targets. Every run is logged to data/results.csv with its mode.
   uv run scripts/evaluate.py --compare gaze_a10 gaze_blend_a100 --per-target
   uv run scripts/evaluate.py --preregistered     # the pre-registered H1 test (see PROGRESS.md)
   uv run scripts/evaluate.py --preregistered-2   # the pre-registered round-2 tests H2 and H3
+  uv run scripts/evaluate.py --positions         # M2 step 3 development: leave-one-position-out on set A
+  uv run scripts/evaluate.py --preregistered-3   # round 3 (H4, H5); refuses until the candidate is frozen
 """
 
 from __future__ import annotations
@@ -22,14 +24,18 @@ import numpy as np
 
 from gaze_cursor.eval.configs import (
     PREREG_CANDIDATE, PREREG_DIAGNOSTICS, PREREG_REFERENCE, REGISTRY, Config, get_configs)
-from gaze_cursor.eval.prereg2 import (
-    H2_MIN_GAIN_DEG, H3_MIN_GAP_DEG, run_h2, run_h3, select_sessions)
+from gaze_cursor.eval.prereg2 import run_h2, run_h3, select_sessions
+from gaze_cursor.eval import prereg3
+from gaze_cursor.eval.prereg3 import (
+    DISPLACED, PREREG3_REFERENCE, SLOTS_A, describe, fit_predict, leave_one_position_out, run_h4,
+    run_h5, select_set_b, set_a)
 from gaze_cursor.eval.results_log import append_rows, now
 from gaze_cursor.eval.runner import build_datasets, common_screen, evaluate
 from gaze_cursor.eval.session import clean_sessions, load_session
 from gaze_cursor.eval.splits import MODES
+from gaze_cursor.eval.splits import build_dataset, make_splits
 from gaze_cursor.eval.stats import (
-    TargetStats, bootstrap_ci, paired_comparison, summarize)
+    TargetStats, bootstrap_ci, concat, paired_comparison, per_target, summarize)
 
 MIN_CRITERION_IMPROVEMENT_DEG = 0.25  # pre-registered: (b)
 MIN_SESSIONS_BETTER = 2               # pre-registered: (c)
@@ -255,6 +261,121 @@ def run_preregistered_2(args: argparse.Namespace) -> int:
     return 0
 
 
+POSITION_CONFIGS = ["gaze_a10", "head_a1", "head_a10", "head_a100", "ray_a1", "ray_a10", "ray_a100"]
+
+
+def run_positions(args: argparse.Namespace) -> int:
+    """M2 step 3 development (EXPLORATORY): leave-one-position-out on set A.
+
+    Every config trains on the other five set-A sessions and is tested on all 25 targets of the
+    held-out one (identical pool, paired targets). Baselines: REF trained on C only (what Run does
+    today) and each session's own calibration (16 targets -> its 9 held-out; the ceiling)."""
+    a = set_a(clean_sessions())
+    if not a.complete:
+        print("Set A is incomplete on this machine:\n  - " + "\n  - ".join(a.missing), file=sys.stderr)
+        return 2
+    names = list(args.configs) if args.configs != ["all"] else POSITION_CONFIGS
+    configs = get_configs(names)
+    sessions = [a.sessions[k] for k in SLOTS_A]
+    screen = common_screen(sessions)
+    ref_pos = a.positions["C"]
+    print("Set A (development, EXPLORATORY): leave-one-position-out, 25 targets per position")
+    for k in SLOTS_A:
+        print(f"  {k:3s} {session_conditions(a.sessions[k])}; {describe(a.positions[k], None if k == 'C' else ref_pos)}")
+    idx = list(range(len(SLOTS_A)))
+    res = {c.name: leave_one_position_out(sessions, idx, c, screen) for c in configs}
+    ref_cfg = REGISTRY[PREREG3_REFERENCE]
+    c_only = [None] + [fit_predict(sessions, ref_cfg, [0], i, screen) for i in idx[1:]]
+    ds = build_dataset(sessions, ref_cfg.feature_set)
+    own = []
+    for sp in make_splits(ds, "within"):
+        m = ref_cfg.make_model().fit(ds.x[sp.train], ds.y[sp.train])
+        own.append(per_target(m.predict(ds.x[sp.test]), ds.y[sp.test], ds.target[sp.test], ds.session[sp.test], screen))
+    head = f"{'mean deg per held-out position':34s}" + "".join(f"{k:>7s}" for k in SLOTS_A) + f"{'all':>7s}  95% CI"
+    print("\n" + head)
+    rows = []
+    def line(label: str, parts: list) -> tuple:
+        vals = [p.err_deg.mean() if p is not None else float("nan") for p in parts]
+        allv = concat([p for p in parts if p is not None]).err_deg
+        lo, hi = bootstrap_ci(allv, args.n_boot, args.seed)
+        print(f"{label:34s}" + "".join(f"{v:7.2f}" for v in vals) + f"{allv.mean():7.2f}  [{lo:.2f}, {hi:.2f}]")
+        return allv, lo, hi
+    for c in configs:
+        allv, lo, hi = line(f"{c.name} (pooled, other 5)", res[c.name])
+        rows.append({"time": now(), "mode": "positions_A", "confirmatory": 0, "config": c.name, "model": c.model,
+                     "features_set": c.feature_set, "alpha": c.alpha, "n_sessions": 6, "n_targets": len(allv),
+                     "err_deg_mean": float(allv.mean()), "ci_lo": lo, "ci_hi": hi,
+                     "note": "leave-one-position-out on set A; " + ", ".join(
+                         f"{k} {p.err_deg.mean():.2f}" for k, p in zip(SLOTS_A, res[c.name]))})
+    line(f"{PREREG3_REFERENCE} trained on C only (today)", c_only)
+    line(f"{PREREG3_REFERENCE} own calibration (9 tgts)", own)
+    ref_name = PREREG3_REFERENCE if PREREG3_REFERENCE in res else configs[0].name
+    for c in configs:
+        if c.name != ref_name:
+            print_comparison(ref_name, c.name, "positions_A",
+                             paired_comparison(concat(res[ref_name]), concat(res[c.name]), args.n_boot, args.seed))
+    if args.per_target:
+        best = min(configs, key=lambda c: concat(res[c.name]).err_deg.mean())
+        print_per_target(best, "positions_A", concat(res[best.name]), tuple(s.path.name for s in sessions))
+    print("\nEXPLORATORY: set A is development data. Choose and freeze ONE candidate before recording set B.")
+    if args.log:
+        append_rows(rows)
+        print(f"logged {len(rows)} rows to data/results.csv (confirmatory=0)")
+    return 0
+
+
+def run_preregistered_3(args: argparse.Namespace) -> int:
+    """The pre-registered round-3 analysis (PROGRESS.md): H4 and H5. Confirmatory: run once."""
+    if prereg3.PREREG3_CANDIDATE is None or prereg3.PREREG3_FREEZE_AFTER is None:
+        print("Refusing to run: the round-3 candidate is not frozen yet (PREREG3_CANDIDATE in "
+              "src/gaze_cursor/eval/prereg3.py). Develop on set A with --positions first.", file=sys.stderr)
+        return 2
+    clean = clean_sessions()
+    a, b = set_a(clean), select_set_b(clean, prereg3.PREREG3_FREEZE_AFTER)
+    for name, why in b.excluded:
+        print(f"excluded {short(name)}: {why}")
+    for note in b.ignored:
+        print(f"ignoring {short(note)}")
+    if not (a.complete and b.complete):
+        print("Refusing to run: still needed:\n  - " + "\n  - ".join(a.missing + b.missing), file=sys.stderr)
+        return 2
+    ref, cand = REGISTRY[PREREG3_REFERENCE], REGISTRY[prereg3.PREREG3_CANDIDATE]
+    screen = common_screen([*a.sessions.values(), *b.sessions.values()])
+    print(f"Pre-registered round 3: reference {ref.name}, frozen candidate {cand.name}")
+    for k in ("C", *DISPLACED, "C2"):
+        print(f"  B {k:3s} {session_conditions(b.sessions[k])}; {describe(b.positions[k], None if k == 'C' else b.positions['C'])}")
+    h4, h5 = run_h4(b, ref, screen), run_h5(a, b, ref, cand, screen)
+    print(f"\n== H4: {ref.name} trained on C only, displaced positions vs C2 ==")
+    print("mean error per position: " + ", ".join(f"{k} {v:.2f}" for k, v in h4["per_position"].items())
+          + f"; C2 {h4['c2']:.2f} deg")
+    print(f"gap = displaced - C2 = {h4['gap']:+.2f} deg, 95% CI [{h4['ci'][0]:+.2f}, {h4['ci'][1]:+.2f}]")
+    print(f"\n== H5: {cand.name} vs {ref.name}, leave-one-position-out, same training pool ==")
+    print(f"mean error: {ref.name} {h5['err_ref']:.2f}, {cand.name} {h5['err_cand']:.2f} deg")
+    print_comparison(ref.name, cand.name, "lopo set B", h5["comparison"])
+    print_comparison(f"{ref.name}(C only)", cand.name, "reported, not a criterion", h5["vs_c_only"])
+    print(f"{cand.name} on C2 (trained on everything else): {h5['cand_c2']:.2f} deg")
+    rows = []
+    for name, res in (("H4", h4), ("H5", h5)):
+        print(f"\n{name} success criteria (all three required):")
+        for k, ok in res["criteria"].items():
+            print(f"  [{'PASS' if ok else 'FAIL'}] {k}")
+        print(f"{name} is {'SUPPORTED' if res['supported'] else 'NOT SUPPORTED'}. No re-tuning on these sessions.")
+    comp = h5["comparison"]
+    rows.append({"time": now(), "mode": "h4_position_cost", "confirmatory": 1,
+                 "config": f"{ref.name}(C only): err(displaced) - err(C2)", "n_sessions": 6,
+                 "n_targets": h4["n_displaced"] + 25, "err_deg_mean": h4["gap"], "ci_lo": h4["ci"][0],
+                 "ci_hi": h4["ci"][1], "note": f"preregistered round 3 H4 {'SUPPORTED' if h4['supported'] else 'NOT SUPPORTED'}"})
+    rows.append({"time": now(), "mode": "h5_lopo", "confirmatory": 1, "config": f"{ref.name} - {cand.name}",
+                 "n_sessions": 13, "n_targets": comp["n_targets"], "err_deg_mean": comp["mean_diff_deg"],
+                 "ci_lo": comp["ci_lo"], "ci_hi": comp["ci_hi"],
+                 "note": f"preregistered round 3 H5 {'SUPPORTED' if h5['supported'] else 'NOT SUPPORTED'}; "
+                         f"{comp['sessions_new_better']}/5 sessions"})
+    if args.log:
+        append_rows(rows)
+        print("\nlogged to data/results.csv (confirmatory=1)")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--configs", nargs="+", default=["all"], help=f"names or 'all': {sorted(REGISTRY)}")
@@ -266,10 +387,18 @@ def main() -> int:
     ap.add_argument("--preregistered", action="store_true", help="run the pre-registered H1 test")
     ap.add_argument("--preregistered-2", dest="preregistered_2", action="store_true",
                     help="run the pre-registered round-2 tests (H2, H3)")
+    ap.add_argument("--positions", action="store_true",
+                    help="M2 step 3 development: leave-one-position-out on set A (exploratory)")
+    ap.add_argument("--preregistered-3", dest="preregistered_3", action="store_true",
+                    help="run the pre-registered round-3 tests (H4, H5); refuses until frozen")
     ap.add_argument("--n-boot", type=int, default=10_000)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-log", dest="log", action="store_false", help="do not append to results.csv")
     args = ap.parse_args()
+    if args.positions:
+        return run_positions(args)
+    if args.preregistered_3:
+        return run_preregistered_3(args)
     if args.preregistered_2:
         return run_preregistered_2(args)
     return run_preregistered(args) if args.preregistered else run_exploratory(args)

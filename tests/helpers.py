@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from gaze_cursor.eval.session import CALIB, CLEAN_WINDOW, TEST, Session
-from gaze_cursor.features import BLEND_FEATURE_NAMES
+from gaze_cursor.features import BLEND_FEATURE_NAMES, N_FEATURES
 
 NAMES = BLEND_FEATURE_NAMES + tuple(f"other{i}" for i in range(52 - len(BLEND_FEATURE_NAMES)))
 
@@ -24,12 +24,13 @@ def fake_session(i: int, n_calib: int = 6, n_test: int = 3, frames: int = 5, see
     phase = np.repeat([p for p, _, _ in targets], frames).astype(np.int8)
     idx = np.repeat([t for _, t, _ in targets], frames).astype(np.int16)
     xy = np.repeat([x for _, _, x in targets], frames, axis=0).astype(np.float32)
-    feats = np.zeros((len(phase), 9))
+    feats = np.zeros((len(phase), N_FEATURES))
     feats[:, 0] = xy[:, 0] / 1470 - 0.5
     feats[:, 1] = xy[:, 1] / 956 - 0.5
     feats[:, 2] = feats[:, 0]; feats[:, 3] = feats[:, 1]
     feats[:, :4] = feats[:, :4] * gain + rng.normal(0, noise, (len(phase), 4))   # lighting effects
-    feats[:, 7:] = 0.25
+    feats[:, 7:9] = 0.25
+    feats[:, 11] = 100.0                                    # head depth (constant head)
     blend = np.tile(rng.uniform(0, 1, 52), (len(phase), 1)).astype(np.float32)
     meta = {"screen": {"width_px": 1470, "height_px": 956, "width_cm": 29.0, "height_cm": 18.9,
                        "distance_cm": 60.0},

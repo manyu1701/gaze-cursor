@@ -5,7 +5,7 @@ import pytest
 
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.eval.session import CALIB, TEST, SessionRecorder, load_session
-from gaze_cursor.features import BLEND_FEATURE_NAMES
+from gaze_cursor.features import BLEND_FEATURE_NAMES, N_FEATURES
 
 NAMES = BLEND_FEATURE_NAMES + tuple(f"other{i}" for i in range(52 - len(BLEND_FEATURE_NAMES)))
 
@@ -19,7 +19,7 @@ def test_from_system_is_plausible() -> None:
 
 def test_session_round_trip_with_blendshapes(tmp_path: Path) -> None:
     rec = SessionRecorder(meta={"screen": ScreenConfig().to_dict(), "blendshape_names": list(NAMES)})
-    feats = np.arange(9, dtype=float)
+    feats = np.arange(N_FEATURES, dtype=float)
     blend = np.linspace(0, 1, len(NAMES)).astype(np.float32)
     rec.add(1, CALIB, 0, (10.0, 20.0), None, None, feats, blend)
     rec.add(2, CALIB, 0, (10.0, 20.0), None, None, None, blend)       # blink/no features -> invalid
@@ -39,7 +39,7 @@ def test_features_recomputed_from_stored_landmarks(tmp_path: Path) -> None:
     pts = _face(iris_dx=0.02)
     rec = SessionRecorder(meta={"screen": ScreenConfig().to_dict(), "image_size": [1000, 1000],
                                 "blendshape_names": list(NAMES)})
-    stale = np.zeros(9)  # deliberately wrong stored features
+    stale = np.zeros(N_FEATURES)  # deliberately wrong stored features
     blend = np.zeros(len(NAMES), np.float32)
     rec.add(1, CALIB, 0, (0.0, 0.0), pts, np.eye(4), stale, blend)
     s = load_session(rec.save(tmp_path))
