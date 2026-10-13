@@ -20,7 +20,7 @@ def test_no_script_is_named_like_a_package() -> None:
     assert not clash, f"rename these scripts, they shadow the package: {clash}"
 
 
-@pytest.mark.parametrize("script", ["cursor_mode.py", "gaze_overlay.py", "target_practice.py"])
+@pytest.mark.parametrize("script", ["cursor_mode.py", "gaze_overlay.py", "target_practice.py", "evaluate_online.py"])
 def test_script_starts_as_a_real_script(script: str) -> None:
     r = subprocess.run([sys.executable, str(ROOT / "scripts" / script), "--help"],
                        capture_output=True, text=True, timeout=120)

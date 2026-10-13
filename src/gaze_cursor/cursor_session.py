@@ -53,10 +53,14 @@ class CursorSession:
     frames: list[list[float]] = field(default_factory=list)
     events: list[list[float]] = field(default_factory=list)
     started: str = field(default_factory=lambda: time.strftime("%Y%m%d_%H%M%S"))
+    # [frame time from which it is active (None until the next frame), calibration file]: replay needs
+    # to know which calibration produced each part of the session.
+    calibrations: list[list] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.smooth = make_filter(RUN_FILTER)
         self._set_range(self.x_train)
+        self.calibrations.append([None, self.calib])
 
     def _set_range(self, x: np.ndarray) -> None:
         self.mu, self.sd = x.mean(axis=0), x.std(axis=0) + 1e-9
@@ -67,10 +71,13 @@ class CursorSession:
         self.smooth.reset()
         self.dot = self.raw = None
         self.worst_z, self.last_good_ms = 0.0, -np.inf
+        self.calibrations.append([None, calib])
 
     # --- per frame -----------------------------------------------------------------------------
     def frame(self, t_ms: float, x: np.ndarray | None, shift: tuple[float, float, float] | None) -> None:
         """One camera frame: ``x`` = gaze features (1, n) or None (no face / blink)."""
+        if self.calibrations[-1][0] is None:
+            self.calibrations[-1][0] = float(t_ms)
         self.shift = shift
         self.raw = None
         if x is not None:
@@ -168,7 +175,8 @@ class CursorSession:
     def save(self, directory: Path) -> Path:
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"cursor_{self.started}.npz"
-        meta = {"kind": "cursor_session", "calibration": self.calib, "filter": RUN_FILTER,
+        meta = {"kind": "cursor_session", "calibration": self.calib, "calibrations": self.calibrations,
+                "filter": RUN_FILTER,
                 "screen": self.cfg.to_dict(), "started": self.started, "frame_columns": self.FRAME_COLUMNS,
                 "event_columns": self.EVENT_COLUMNS, "event_codes": EVENT_CODES,
                 "label_window_ms": LABEL_WINDOW_MS, "summary": self.summary()}
