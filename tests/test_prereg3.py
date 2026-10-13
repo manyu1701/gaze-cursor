@@ -173,8 +173,17 @@ def test_h5_detects_a_better_candidate_and_not_a_null() -> None:
     b = select_set_b(set_b_sessions(), freeze_after=FREEZE)
     h5 = run_h5(a, b, REGISTRY["gaze_a10"], REGISTRY["ray_a1"], SCREEN)
     assert h5["supported"] and h5["err_cand"] < h5["err_ref"]
-    null = run_h5(a, b, REGISTRY["gaze_a10"], REGISTRY["gaze_a10"], SCREEN)
-    assert not null["supported"] and null["comparison"]["mean_diff_deg"] == pytest.approx(0)
+    # Null: nobody moved, so pooling the same position gains nothing over the centre calibration.
+    still = PositionSet(sessions=dict(zip(["C", "N", "R", "L", "Rt", "Lo", "C2"],
+                                          set_b_sessions({k: HEADS["C"] for k in HEADS}))))
+    still_a = PositionSet(sessions=dict(zip(["C", "N", "R", "L", "Rt", "Lo"],
+                                            set_b_sessions({k: HEADS["C"] for k in HEADS})[:6])))
+    assert not run_h5(still_a, still, REGISTRY["gaze_a10"], REGISTRY["gaze_a10"], SCREEN)["supported"]
+
+
+def test_frozen_candidate_is_registered() -> None:
+    from gaze_cursor.eval import prereg3
+    assert prereg3.PREREG3_CANDIDATE in REGISTRY and prereg3.PREREG3_FREEZE_AFTER > "2026-10-13T05:36:00"
 
 
 # Positions shaped like the real set A (2026-10-13): N much closer than anything else, every other

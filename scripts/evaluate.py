@@ -383,10 +383,10 @@ def run_preregistered_3(args: argparse.Namespace) -> int:
     print("mean error per position: " + ", ".join(f"{k} {v:.2f}" for k, v in h4["per_position"].items())
           + f"; C2 {h4['c2']:.2f} deg")
     print(f"gap = displaced - C2 = {h4['gap']:+.2f} deg, 95% CI [{h4['ci'][0]:+.2f}, {h4['ci'][1]:+.2f}]")
-    print(f"\n== H5: {cand.name} vs {ref.name}, leave-one-position-out, same training pool ==")
-    print(f"mean error: {ref.name} {h5['err_ref']:.2f}, {cand.name} {h5['err_cand']:.2f} deg")
-    print_comparison(ref.name, cand.name, "lopo set B", h5["comparison"])
-    print_comparison(f"{ref.name}(C only)", cand.name, "reported, not a criterion", h5["vs_c_only"])
+    print(f"\n== H5 (amended): {cand.name} on all other calibrations vs {ref.name} on C only (today's Run) ==")
+    print(f"mean error: {ref.name} C only {h5['err_ref']:.2f}, {cand.name} pooled {h5['err_cand']:.2f} deg")
+    print_comparison(f"{ref.name}(C only)", f"{cand.name}(pooled)", "held-out set-B positions", h5["comparison"])
+    print_comparison(f"{ref.name}(pooled)", f"{cand.name}(pooled)", "reported, not a criterion", h5["vs_same_pool"])
     print(f"{cand.name} on C2 (trained on everything else): {h5['cand_c2']:.2f} deg")
     rows = []
     for name, res in (("H4", h4), ("H5", h5)):
@@ -399,7 +399,7 @@ def run_preregistered_3(args: argparse.Namespace) -> int:
                  "config": f"{ref.name}(C only): err(displaced) - err(C2)", "n_sessions": 6,
                  "n_targets": h4["n_displaced"] + 25, "err_deg_mean": h4["gap"], "ci_lo": h4["ci"][0],
                  "ci_hi": h4["ci"][1], "note": f"preregistered round 3 H4 {'SUPPORTED' if h4['supported'] else 'NOT SUPPORTED'}"})
-    rows.append({"time": now(), "mode": "h5_lopo", "confirmatory": 1, "config": f"{ref.name} - {cand.name}",
+    rows.append({"time": now(), "mode": "h5_lopo", "confirmatory": 1, "config": f"{ref.name}(C only) - {cand.name}(pooled)",
                  "n_sessions": 13, "n_targets": comp["n_targets"], "err_deg_mean": comp["mean_diff_deg"],
                  "ci_lo": comp["ci_lo"], "ci_hi": comp["ci_hi"],
                  "note": f"preregistered round 3 H5 {'SUPPORTED' if h5['supported'] else 'NOT SUPPORTED'}; "

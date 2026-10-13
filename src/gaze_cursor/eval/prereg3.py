@@ -1,8 +1,8 @@
 """Pre-registered round 3 (PROGRESS.md): head position. Every threshold here is the written protocol.
 
 H4: the current approach (REF trained on the centre session only) loses accuracy when the head moves.
-H5: the frozen candidate, trained on all other calibrations, beats REF trained on the same data on a
-    held-out position.
+H5 (amended before set B, see PROGRESS.md): the frozen candidate, trained on all other calibrations,
+    beats today's Run (REF trained on the set-B centre session only) on a held-out position.
 
 Set A (development) is named explicitly below. Set B (confirmatory) is selected from sessions that
 start after the candidate is frozen: slot from the note (a label), confirmed by the measured position
@@ -43,8 +43,8 @@ SET_A = {
 
 # Frozen by the freeze commit (M2 step 3), BEFORE set B is recorded. None = not frozen yet: the
 # confirmatory run refuses, and no session can count as set B.
-PREREG3_CANDIDATE: str | None = None
-PREREG3_FREEZE_AFTER: str | None = None   # local time of the freeze commit, "YYYY-MM-DDTHH:MM:SS"
+PREREG3_CANDIDATE: str | None = "gaze_a100"          # frozen 2026-10-13: all calibrations pooled
+PREREG3_FREEZE_AFTER: str | None = "2026-10-13T06:00:00"  # local (IST) time, just after the freeze commit
 PREREG3_REFERENCE = "gaze_a10"
 
 NEAR_MIN, FAR_MAX = 1.12, 0.90            # distance relative to C
@@ -222,26 +222,26 @@ def run_h4(b: PositionSet, ref: Config, screen: ScreenConfig) -> dict:
 
 
 def run_h5(a: PositionSet, b: PositionSet, ref: Config, cand: Config, screen: ScreenConfig) -> dict:
-    """Leave-one-position-out on set B, training pool = all of set A + set B except the test session."""
+    """Amended H5: CAND trained on all of set A + set B except the test session versus REF trained on
+    set-B C only (today's Run), each displaced set-B session held out in turn; paired on its targets."""
     b_order = ["C", *DISPLACED, "C2"]
     sessions = [b.sessions[k] for k in b_order] + [a.sessions[k] for k in SLOTS_A]
     test_idx = list(range(1, 1 + len(DISPLACED)))
-    r = concat(leave_one_position_out(sessions, test_idx, ref, screen))
+    today = concat([fit_predict(sessions, ref, [0], t, screen) for t in test_idx])
     c = concat(leave_one_position_out(sessions, test_idx, cand, screen))
-    comp = paired_comparison(r, c, N_BOOT, SEED)
+    comp = paired_comparison(today, c, N_BOOT, SEED)
     crit = {
         "(a) CI lower bound > 0": comp["ci_lo"] > 0,
         f"(b) mean d >= {H5_MIN_GAIN_DEG} deg": comp["mean_diff_deg"] >= H5_MIN_GAIN_DEG,
         f"(c) d > 0 in >= {H5_MIN_SESSIONS} of 5 test sessions": comp["sessions_new_better"] >= H5_MIN_SESSIONS,
     }
-    # Reported, not criteria.
-    c_only = concat([fit_predict(sessions, ref, [0], t, screen) for t in test_idx])
-    vs_today = paired_comparison(c_only, c, N_BOOT, SEED)
+    # Reported, not criteria: REF on the same pool (the original H5 comparison), CAND on C2.
+    same_pool = concat(leave_one_position_out(sessions, test_idx, ref, screen))
     cand_c2 = leave_one_position_out(sessions, [len(DISPLACED) + 1], cand, screen)[0]
     return {"comparison": comp, "criteria": crit, "supported": all(crit.values()),
-            "err_ref": float(r.err_deg.mean()), "err_cand": float(c.err_deg.mean()),
+            "err_ref": float(today.err_deg.mean()), "err_cand": float(c.err_deg.mean()),
             "per_position": dict(zip(DISPLACED, comp["per_session_diff_deg"])),
-            "vs_c_only": vs_today, "cand_c2": float(cand_c2.err_deg.mean())}
+            "vs_same_pool": paired_comparison(same_pool, c, N_BOOT, SEED), "cand_c2": float(cand_c2.err_deg.mean())}
 
 
 def few_dot(sessions: Sequence[Session], config: Config, train: Sequence[int], test: int, screen: ScreenConfig,
