@@ -27,14 +27,6 @@ def test_calibrate_launcher_runs_the_guided_calibration_with_a_note() -> None:
     assert "scripts/calibrate.py --guided" in text and '--note "$NOTE"' in text
 
 
-def test_run_launcher_starts_the_overlay_with_the_latest_session() -> None:
-    assert "scripts/gaze_overlay.py" in (ROOT / "Run.command").read_text()
-
-
-def test_run_launcher_explains_when_there_is_no_calibration(tmp_path: Path) -> None:
-    shutil.copy(ROOT / "Run.command", tmp_path / "Run.command")          # it uses the folder it lives in
-    (tmp_path / "data" / "sessions").mkdir(parents=True)
-    (tmp_path / "data" / "sessions" / "session_x.faces.npz").write_bytes(b"")   # an image sidecar is not a calibration
-    r = subprocess.run(["bash", str(tmp_path / "Run.command")], stdin=subprocess.DEVNULL,
-                       capture_output=True, text=True, timeout=30)
-    assert r.returncode == 1 and "No calibration found yet" in r.stdout and "Calibrate.command" in r.stdout
+def test_run_launcher_starts_the_overlay_without_needing_a_full_calibration() -> None:
+    text = (ROOT / "Run.command").read_text()
+    assert "scripts/gaze_overlay.py" in text and "No calibration found yet" not in text   # quick 9 dots first

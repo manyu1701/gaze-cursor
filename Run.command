@@ -1,17 +1,14 @@
 #!/bin/bash
-# Double-click to run the live gaze dot with your latest calibration. It first checks that you are
-# sitting and lit as you were when you calibrated (SPACE starts when every step is green; U runs anyway).
+# Double-click to run the live gaze dot. It starts with a 9-dot quick calibration where you sit
+# (~15 s; the round-3 winner), R recalibrates at any time, L on the start screen uses the latest
+# full calibration instead (with the posture check against it).
 cd "$(dirname "$0")" || exit 1
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 if ! command -v uv >/dev/null 2>&1; then
   echo "uv was not found. Install it from https://docs.astral.sh/uv/ and try again."
   read -r -p "Press Enter to close" _; exit 1
 fi
-if ! ls data/sessions/session_*.npz 2>/dev/null | grep -qv '\.faces\.npz$'; then
-  echo "No calibration found yet. Double-click Calibrate.command first."
-  read -r -p "Press Enter to close" _; exit 1
-fi
-echo "gaze-cursor: live gaze dot (q or ESC quits)"
+echo "gaze-cursor: live gaze dot (quick 9-dot calibration first; R recalibrates, q or ESC quits)"
 uv run scripts/gaze_overlay.py "$@"
 status=$?
 echo
