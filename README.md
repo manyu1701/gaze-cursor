@@ -29,12 +29,13 @@ uv run scripts/viewer.py                 # live face mesh, irises, head pose, FP
 
 ### One-click launchers
 
-Double-click these in Finder. They open Terminal, which already has the Camera permission. If macOS will not open one, run `chmod +x Calibrate.command Run.command Practice.command` once.
+Double-click these in Finder. They open Terminal, which already has the Camera permission. If macOS will not open one, run `chmod +x *.command` once.
 
 | Launcher | What it does |
 | --- | --- |
 | **`Calibrate.command`** | Asks for an optional note, then (1) a dark, calibration-like screen with a live lighting reading, the brightness gate and front-light tips (SPACE continues, ESC quits), (2) the live setup checklist, (3) the 25-dot calibration. The lighting is captured automatically and saved with the session. |
-| **`Run.command`** | Starts the live gaze dot with your latest calibration, after a position and lighting check. If you have not calibrated yet it tells you to run `Calibrate.command` first. It will switch to real cursor control when M3 is built. |
+| **`Run.command`** | The live gaze dot: a 9-dot quick calibration where you sit (~15 s), then the dot, a live metrics panel and live tests (T targets, A accuracy with the dot hidden, P path); R recalibrates. |
+| **`Cursor.command`** | **Cursor mode (M3):** after the quick calibration, tap **Right Option** in any app and the real cursor jumps to where you look; finish with the trackpad and click as usual. Ctrl+Option+G on/off, Ctrl+Option+R recalibrate, Ctrl+Option+Q quit. First run: grant **Input Monitoring** to Terminal (System Settings > Privacy & Security). Every frame and click is logged to `data/quick/cursor_*.npz` (positions only) for the self-recalibration work. |
 | **`Practice.command`** | Target practice: a box appears and you move the gaze dot into it with your eyes, holding it until the box fills. The box shrinks after hits and grows after misses; the summary tells you the smallest box you can reliably hit, how fast you hit, how far the dot sits from where you look, and whether it is systematically shifted. Uses your latest calibration (`--pool` for all calibrations in the same lighting). |
 
 ## Recording a session
@@ -149,7 +150,7 @@ Around the pipeline: `posture.py` (setup checklist, reference posture, lighting)
 ## Project layout
 
 ```
-Calibrate.command, Run.command, Practice.command   one-click launchers (macOS)
+Calibrate.command, Run.command, Practice.command, Cursor.command   one-click launchers (macOS)
 src/gaze_cursor/                 capture, landmarks, features, calibration, posture, config, eval/, sinks/
 scripts/                         viewer, download_model, calibrate, check_setup, gaze_overlay, benchmark, evaluate, positions, diagnose_positions, target_practice
 tests/                           pytest suite
@@ -164,7 +165,7 @@ PLAN.md, PROGRESS.md             milestones; findings, decisions and pre-registr
 ## Development
 
 ```bash
-uv run pytest                            # 186 unit tests
+uv run pytest                            # 207 unit tests
 ```
 
 ## Roadmap

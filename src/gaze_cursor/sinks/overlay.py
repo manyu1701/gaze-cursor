@@ -262,6 +262,14 @@ class ClickThroughOverlay:
             self._window = None
         self.pump()
 
+    def restore_policy(self) -> None:
+        """After a fullscreen canvas was used (it makes the app a regular, focus-taking one), go back to
+        a background accessory app and bring the overlay to the front again."""
+        import AppKit
+
+        self._app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
+        self._window.orderFrontRegardless()
+
     @property
     def safe_top(self) -> int:
         return int(self.cfg.top_inset_pt) + 14

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-LAUNCHERS = ("Calibrate.command", "Run.command", "Practice.command")
+LAUNCHERS = ("Calibrate.command", "Run.command", "Practice.command", "Cursor.command")
 
 
 @pytest.mark.parametrize("name", LAUNCHERS)
@@ -52,3 +52,7 @@ def test_two_canvases_can_be_opened_one_after_the_other_in_one_process() -> None
     for _ in range(2):                                   # light-check screen, then the calibration screen
         with FullscreenCanvas(ScreenConfig(), alpha=0.0) as canvas:
             assert canvas.show(canvas.blank()) == -1
+
+
+def test_cursor_launcher_starts_cursor_mode() -> None:
+    assert "scripts/gaze_cursor.py" in (ROOT / "Cursor.command").read_text()

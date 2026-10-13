@@ -7,7 +7,7 @@
   changing any event. It needs **Input Monitoring** permission for the app running Python (Terminal).
 
 Hotkeys (defaults): tap **Right Option** alone = warp to gaze; Ctrl+Option+G = on / off;
-Ctrl+Option+Q = quit.
+Ctrl+Option+R = recalibrate (9 quick dots); Ctrl+Option+Q = quit.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 RIGHT_OPTION_KEYCODE = 61
-KEY_G, KEY_Q = 5, 12          # ANSI virtual key codes
+KEY_G, KEY_Q, KEY_R = 5, 12, 15  # ANSI virtual key codes
 TAP_MAX_MS = 400              # a modifier press longer than this is a hold (e.g. Option-drag), not a tap
 FLAG_OPTION = 1 << 19         # kCGEventFlagMaskAlternate
 FLAG_CONTROL = 1 << 18        # kCGEventFlagMaskControl
@@ -25,7 +25,7 @@ FLAG_CONTROL = 1 << 18        # kCGEventFlagMaskControl
 
 @dataclass(frozen=True)
 class InputEvent:
-    kind: str                            # "warp", "toggle", "quit", "click"
+    kind: str                            # "warp", "toggle", "recalibrate", "quit", "click"
     t_ms: float                          # monotonic milliseconds (the camera frames' clock)
     xy: tuple[float, float] | None = None  # click position in main-display points
     button: str | None = None            # "left" / "right" for clicks
@@ -71,6 +71,8 @@ class HotkeyDetector:
                 return [InputEvent("toggle", t_ms)]
             if keycode == KEY_Q:
                 return [InputEvent("quit", t_ms)]
+            if keycode == KEY_R:
+                return [InputEvent("recalibrate", t_ms)]
         return []
 
     def mouse_down(self, xy: tuple[float, float], button: str, t_ms: float) -> list[InputEvent]:
