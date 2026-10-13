@@ -64,7 +64,9 @@ Ordered by what the M1 data says matters most (see PROGRESS.md, "Independent ana
 
 ## M3: Control the real cursor
 
-**Decisions (Abhimanyu, 2026-10-13):** warp = **tap a hotkey** (Right Command, chosen by Abhimanyu after the first live try; Right Option before) and the cursor jumps to the gaze point once; the trackpad finishes. **Clicks stay on the trackpad** in the first pass; every click is logged as a labelled gaze sample and drives input-free self-recalibration. Dwell / blink clicking comes later as a measured experiment. Build order: quick-calibration refactor -> cursor + input platform module (listen-only event tap, Accessibility + Input Monitoring) -> click-through status overlay -> `Cursor.command` -> click log -> online RLS + drift (pre-registered before recording) -> head-and-eyes test H + Fitts task.
+**Decisions (Abhimanyu, 2026-10-13):** warp = **tap a hotkey** (Right Command, chosen by Abhimanyu after the first live try; Right Option before) and the cursor jumps to the gaze point once; the trackpad finishes. **Clicks stay on the trackpad** in the first pass; every click is logged as a labelled gaze sample and drives input-free self-recalibration. Dwell / blink clicking comes later as a measured experiment. Build order: quick-calibration refactor -> cursor + input platform module (listen-only event tap, Accessibility + Input Monitoring) -> click-through status overlay -> `Cursor.command` -> click log -> online RLS + drift (pre-registered before recording) -> head-and-eyes test H + Fitts task. (Accessibility turned out unnecessary: no synthetic clicks; only Input Monitoring.)
+
+**Status (2026-10-13 ~21:30):** steps 1-5 built and working live (`Cursor.command`; jump = Right Command tap, shortcuts Cmd+Option+G/R/Q). Step 6 (click learning, `online.py`) built and its test **frozen as round 4** (PROGRESS.md); waiting for 3 recorded sessions. Step 7 (head-and-eyes test H, Fitts task) not started.
 
 - Cursor sink using Quartz CGEvent (Accessibility permission).
 - Click triggers: dwell, blink, and/or hotkey (compare).
