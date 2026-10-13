@@ -101,6 +101,8 @@ def check_light(cfg: ScreenConfig, note: str = "", guided: bool = False) -> bool
                 lines += [("tip: " if k == 0 else "     ") + t for k, t in enumerate(textwrap.wrap(item.tip, 110))] if item.tip else []
             else:
                 lines = ["no face detected"]
+            slot = prereg3.slot_from_note(note)
+            lines.insert(0, f"note '{note}': " + (f"set B slot {slot}" if slot else "no set-B slot (will not count for set B)"))
             for k, line in enumerate(lines):           # small grey text: adds almost no light
                 cv2.putText(img, line, (40, canvas.safe_top + 30 + 28 * k), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                             (150, 150, 150), 1, cv2.LINE_AA)

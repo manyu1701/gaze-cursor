@@ -9,7 +9,13 @@ if ! command -v uv >/dev/null 2>&1; then
   read -r -p "Press Enter to close" _; exit 1
 fi
 echo "gaze-cursor: calibration"
-read -r -p "Optional note about this session (e.g. 'evening, lamp'; Enter to skip): " NOTE
+echo "Set B: start the note with the slot: pos C, pos N, pos R, pos L, pos Rt, pos Lo, C2"
+while true; do
+  read -r -p "Note about this session (e.g. 'pos N' or 'evening, lamp'): " NOTE
+  [ -n "${NOTE// /}" ] && break
+  read -r -p "No note: this session will NOT count for set B. Record without a note? [y/N] " ok
+  [ "$ok" = "y" ] || [ "$ok" = "Y" ] && break
+done
 uv run scripts/calibrate.py --guided --note "$NOTE" "$@"
 status=$?
 echo
