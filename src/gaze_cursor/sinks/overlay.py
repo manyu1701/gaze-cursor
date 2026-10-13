@@ -32,9 +32,16 @@ def own_window_bounds() -> tuple[int, int, int, int] | None:
     return best[1] if best else None
 
 
+_WINDOW_CLASS = None
+
+
 def _make_window_class():
+    """The NSWindow subclass, created once per process: Objective-C refuses to define a class name
+    twice, so a second canvas in the same run (e.g. the light check, then the calibration) reuses it."""
+    global _WINDOW_CLASS
+    if _WINDOW_CLASS is not None:
+        return _WINDOW_CLASS
     import AppKit
-    import objc
 
     class _CanvasWindow(AppKit.NSWindow):
         keys: list[int] = []
@@ -50,6 +57,7 @@ def _make_window_class():
             if chars:
                 _CanvasWindow.keys.append(ord(chars[0]))
 
+    _WINDOW_CLASS = _CanvasWindow
     return _CanvasWindow
 
 
