@@ -5,7 +5,7 @@ transparent status chip in the top-right corner, every app keeps working, clicks
 only ever moves when you tap the hotkey, and not when the tracker cannot see your eyes.
 
 Hotkeys (work in any app): tap Right Command = jump to gaze; Cmd+Option+G = on / off;
-Cmd+Option+R = recalibrate; Cmd+Option+Q (or Ctrl+C here) = quit.
+Cmd+Option+R = recalibrate; Cmd+Option+X (or Ctrl+C here) = quit.
 
 Every frame (gaze, head shift) and every hotkey / click is saved to data/quick/cursor_<time>.npz
 (positions only, no images) and summarised in data/results.csv, so self-recalibration from clicks can be
@@ -105,7 +105,7 @@ def main() -> int:
         ref = Reference.from_current(fit.posture)
         session = CursorSession(cfg, fit.model, fit.x, ref.center, fit.path.name)
         print("Cursor mode on: tap Right Command to jump to your gaze; Cmd+Option+G on/off, "
-              "Cmd+Option+R recalibrate, Cmd+Option+Q quit.")
+              "Cmd+Option+R recalibrate, Cmd+Option+X quit.")
         cursor = MacCursor((cfg.width_px, cfg.height_px), HotkeyDetector(args.warp_key))
         try:
             with ClickThroughOverlay(cfg) as overlay:

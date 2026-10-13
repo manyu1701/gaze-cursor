@@ -6,7 +6,7 @@ import os
 import pytest
 
 from gaze_cursor.sinks.cursor import (
-    FLAG_COMMAND, FLAG_CONTROL, FLAG_OPTION, KEY_G, KEY_Q, RIGHT_COMMAND_KEYCODE, RIGHT_OPTION_KEYCODE,
+    FLAG_COMMAND, FLAG_CONTROL, FLAG_OPTION, KEY_G, KEY_X, RIGHT_COMMAND_KEYCODE, RIGHT_OPTION_KEYCODE,
     HotkeyDetector, clamp, event_time_ms)
 
 LEFT_COMMAND_KEYCODE = 55
@@ -58,8 +58,8 @@ def test_toggle_quit_and_clicks() -> None:
     d = HotkeyDetector()
     both = FLAG_COMMAND | FLAG_OPTION
     assert [e.kind for e in d.key_down(KEY_G, both, 1)] == ["toggle"]
-    assert [e.kind for e in d.key_down(KEY_Q, both, 2)] == ["quit"]
-    assert d.key_down(KEY_Q, FLAG_COMMAND, 3) == []                     # Cmd+Q alone is not ours
+    assert [e.kind for e in d.key_down(KEY_X, both, 2)] == ["quit"]
+    assert d.key_down(KEY_X, FLAG_COMMAND, 3) == []                     # Cmd+X alone is not ours
     assert d.key_down(KEY_G, FLAG_CONTROL | FLAG_OPTION, 3) == []       # the old Ctrl+Option combos are off
     (c,) = d.mouse_down((10.5, 20.0), "left", 4)
     assert (c.kind, c.xy, c.button, c.t_ms) == ("click", (10.5, 20.0), "left", 4)

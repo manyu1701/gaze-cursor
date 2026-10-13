@@ -8,7 +8,7 @@
 
 Hotkeys (defaults): tap **Right Command** alone = warp to gaze (the author's choice after the first live
 try; Right Option before); Cmd+Option+G = on / off;
-Cmd+Option+R = recalibrate (9 quick dots); Cmd+Option+Q = quit.
+Cmd+Option+R = recalibrate (9 quick dots); Cmd+Option+X = quit.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 RIGHT_OPTION_KEYCODE, RIGHT_COMMAND_KEYCODE = 61, 54
-KEY_G, KEY_Q, KEY_R = 5, 12, 15  # ANSI virtual key codes
+KEY_G, KEY_X, KEY_R = 5, 7, 15  # ANSI virtual key codes (X, not Q: the tap is listen-only, so Terminal also sees the key and Cmd+Option+X is its "Quit and Keep Windows")
 TAP_MAX_MS = 400              # a modifier press longer than this is a hold (e.g. Cmd-drag), not a tap
 FLAG_OPTION = 1 << 19         # kCGEventFlagMaskAlternate
 FLAG_CONTROL = 1 << 18        # kCGEventFlagMaskControl
@@ -71,10 +71,10 @@ class HotkeyDetector:
 
     def key_down(self, keycode: int, flags: int, t_ms: float) -> list[InputEvent]:
         self._down_at = None                                   # the modifier was used with a key
-        if flags & FLAG_COMMAND and flags & FLAG_OPTION:   # Cmd+Option+G / R / Q (the author)
+        if flags & FLAG_COMMAND and flags & FLAG_OPTION:   # Cmd+Option+G / R / X (the author)
             if keycode == KEY_G:
                 return [InputEvent("toggle", t_ms)]
-            if keycode == KEY_Q:
+            if keycode == KEY_X:
                 return [InputEvent("quit", t_ms)]
             if keycode == KEY_R:
                 return [InputEvent("recalibrate", t_ms)]
