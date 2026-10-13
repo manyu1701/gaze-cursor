@@ -261,7 +261,7 @@ def run_preregistered_2(args: argparse.Namespace) -> int:
     return 0
 
 
-POSITION_CONFIGS = ["gaze_a10", "head_a1", "head_a10", "head_a100", "ray_a1", "ray_a10", "ray_a100"]
+POSITION_CONFIGS = ["gaze_a10", "gaze_a100", "head_a100", "ray_a100", "geo_a1", "geo_a10", "geo_a100"]
 
 
 def run_positions(args: argparse.Namespace) -> int:
@@ -289,7 +289,7 @@ def run_positions(args: argparse.Namespace) -> int:
     ds = build_dataset(sessions, ref_cfg.feature_set)
     own = []
     for sp in make_splits(ds, "within"):
-        m = ref_cfg.make_model().fit(ds.x[sp.train], ds.y[sp.train])
+        m = ref_cfg.make_model(screen).fit(ds.x[sp.train], ds.y[sp.train])
         own.append(per_target(m.predict(ds.x[sp.test]), ds.y[sp.test], ds.target[sp.test], ds.session[sp.test], screen))
     head = f"{'mean deg per held-out position':34s}" + "".join(f"{k:>7s}" for k in SLOTS_A) + f"{'all':>7s}  95% CI"
     print("\n" + head)

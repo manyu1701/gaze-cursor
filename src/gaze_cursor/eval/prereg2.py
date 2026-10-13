@@ -107,7 +107,7 @@ def select_sessions(clean: list[Session]) -> Selection:
 
 def _fit_predict(ds: Dataset, config: Config, train: np.ndarray, test: np.ndarray,
                  screen: ScreenConfig) -> TargetStats:
-    model = config.make_model().fit(ds.x[train], ds.y[train])
+    model = config.make_model(screen).fit(ds.x[train], ds.y[train])
     return per_target(model.predict(ds.x[test]), ds.y[test], ds.target[test], ds.session[test], screen)
 
 

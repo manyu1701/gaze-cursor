@@ -175,3 +175,24 @@ def test_h5_detects_a_better_candidate_and_not_a_null() -> None:
     assert h5["supported"] and h5["err_cand"] < h5["err_ref"]
     null = run_h5(a, b, REGISTRY["gaze_a10"], REGISTRY["gaze_a10"], SCREEN)
     assert not null["supported"] and null["comparison"]["mean_diff_deg"] == pytest.approx(0)
+
+
+# Positions shaped like the real set A (2026-10-13): N much closer than anything else, every other
+# displaced session also lower than C, so each held-out position is an extrapolation.
+REAL_LIKE = {"C": (0, 10, 60), "N": (0, 11, 40), "R": (6, 18, 67), "L": (10, 17, 62),
+             "Rt": (-10, 19, 66), "Lo": (-2, 22, 70)}
+
+
+def test_geo_model_extrapolates_where_free_models_do_not() -> None:
+    a = [make_session(k, 300 + j, head=REAL_LIKE[k]) for j, k in enumerate(REAL_LIKE)]
+    err = {n: [t.err_deg.mean() for t in leave_one_position_out(a, range(6), REGISTRY[n], SCREEN)]
+           for n in ("gaze_a10", "head_a10", "geo_a10")}
+    assert max(err["geo_a10"]) < 0.5                        # fixed geometry: every position, incl. N
+    assert err["head_a10"][1] > 3 * err["geo_a10"][1] + 1   # free head terms extrapolate badly to N
+    assert np.mean(err["gaze_a10"]) > 3                     # and the pose-free model cannot move at all
+
+
+def test_geo_model_needs_the_screen() -> None:
+    from gaze_cursor.calibration import GazeModel
+    with pytest.raises(ValueError):
+        GazeModel("geo")

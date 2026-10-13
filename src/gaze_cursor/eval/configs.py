@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from gaze_cursor.calibration import GazeModel
+from gaze_cursor.config import ScreenConfig
 
 
 @dataclass(frozen=True)
@@ -16,8 +17,8 @@ class Config:
     model: str = "ridge"
     alpha: float = 1.0
 
-    def make_model(self) -> GazeModel:
-        return GazeModel(self.model, self.alpha)
+    def make_model(self, screen: ScreenConfig | None = None) -> GazeModel:
+        return GazeModel(self.model, self.alpha, screen)
 
 
 def _c(feature_set: str, alpha: float, model: str = "ridge") -> Config:
@@ -32,6 +33,7 @@ REGISTRY: dict[str, Config] = {c.name: c for c in (
     _c("both", 100),
     _c("head", 1), _c("head", 10), _c("head", 100),   # M2 step 3a: pooled, head pose + position
     _c("ray", 1), _c("ray", 10), _c("ray", 100),      # M2 step 3b: linearised gaze ray -> screen
+    _c("geo", 1, "geo"), _c("geo", 10, "geo"), _c("geo", 100, "geo"),  # 3b constrained: fixed geometry
 )}
 
 # Pre-registered comparison (see PROGRESS.md): reference first, candidate second.

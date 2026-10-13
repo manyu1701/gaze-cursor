@@ -37,7 +37,7 @@ def evaluate(datasets: dict[str, Dataset], config: Config, mode: str, screen: Sc
     ds = datasets[config.feature_set]
     preds, ys, targets, sessions = [], [], [], []
     for sp in make_splits(ds, mode, held_out):
-        model = config.make_model().fit(ds.x[sp.train], ds.y[sp.train])
+        model = config.make_model(screen).fit(ds.x[sp.train], ds.y[sp.train])
         preds.append(model.predict(ds.x[sp.test]))
         ys.append(ds.y[sp.test]); targets.append(ds.target[sp.test]); sessions.append(ds.session[sp.test])
     if not preds:

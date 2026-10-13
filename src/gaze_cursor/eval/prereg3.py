@@ -187,7 +187,7 @@ def fit_predict(sessions: Sequence[Session], config: Config, train: Sequence[int
     ds = build_dataset(sessions, config.feature_set)
     tr = np.flatnonzero(np.isin(ds.session, list(train)))
     te = np.flatnonzero(ds.session == test)
-    model = config.make_model().fit(ds.x[tr], ds.y[tr])
+    model = config.make_model(screen).fit(ds.x[tr], ds.y[tr])
     return per_target(model.predict(ds.x[te]), ds.y[te], ds.target[te], ds.session[te], screen)
 
 

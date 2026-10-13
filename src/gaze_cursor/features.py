@@ -31,7 +31,7 @@ BLEND_FEATURE_NAMES = tuple(
     for kind in ("LookIn", "LookOut", "LookUp", "LookDown", "Blink", "Squint", "Wide")
     for side in ("Left", "Right")
 )
-FEATURE_SETS = ("iris", "blend", "both", "eyes", "gaze", "gaze_blend", "head", "ray")
+FEATURE_SETS = ("iris", "blend", "both", "eyes", "gaze", "gaze_blend", "head", "ray", "geo")
 
 # Below this the eye is treated as closed. Kept low on purpose: lids narrow naturally when looking
 # down (median openness ~0.15 at the bottom of the screen on a laptop webcam), so a higher cutoff
@@ -120,6 +120,7 @@ def assemble(
     - ``head`` (M2 step 3a): iris position (4) + head pose (3) + head position (3); a plain pooled
       regression that can learn how posture shifts the mapping.
     - ``ray`` (M2 step 3b): the linearised gaze ray hitting the screen plane (see ``ray_features``).
+    - ``geo``: iris (4), yaw, pitch, head position (3), the input of the constrained ``geo`` model.
     """
     if feature_set == "iris":
         return features[..., :N_BASE]
@@ -127,6 +128,8 @@ def assemble(
         return features[..., [0, 1, 2, 3, 4, 5, 6, 9, 10, 11]]
     if feature_set == "ray":
         return ray_features(features)
+    if feature_set == "geo":
+        return features[..., [0, 1, 2, 3, 4, 5, 9, 10, 11]]
     if feature_set == "eyes":
         return features[..., [0, 1, 2, 3, 7, 8]]
     if feature_set == "gaze":
