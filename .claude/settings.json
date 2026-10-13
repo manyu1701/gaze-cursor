@@ -54,6 +54,14 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          { "type": "command", "command": "python3", "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.py", "review_record"], "timeout": 30 }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

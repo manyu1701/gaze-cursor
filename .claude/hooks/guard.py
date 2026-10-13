@@ -7,6 +7,11 @@ One script, several hook events (first argument):
   pre_commit     - before `git commit` in this repo (main checkout or a worktree): run the tests, block on failure
   protect        - before Edit/Write: block edits to recorded data and changes to frozen text
   stop           - at the end of a reply: remind (once per state) to update PLAN/notes after code changes
+  review_record  - after the Agent tool launches a reviewer: record which working-tree state it was asked to review
+  review-ok NAME - manual fallback for review_record (run in the repo after the reviewer was launched)
+
+pre_commit also enforces "reviewers run per commit, not per step" (REVIEW_RULES below): a commit is blocked
+while review-scoped files have changes that no reviewer was launched on. Override: `SKIP_REVIEW="reason" git commit`.
 
 Reads the hook JSON on stdin. Exit 2 + stderr = block (PreToolUse) / continue (Stop).
 Standard library only; must run on macOS's /usr/bin/python3 (3.9) as well as newer Pythons.
@@ -36,6 +41,15 @@ LOCK_MAX_AGE_S = 12 * 3600
 PROTECTED_DIRS = ("data/sessions/", "data/quick/", "data/dry_runs/", "data/excluded/", "data/tasks/", "models/")
 # Append-only documents: existing lines may not be changed or deleted.
 APPEND_ONLY = ("PREREGISTRATIONS.md",)
+# Reviewer agent -> path prefixes it must have been run on before they are committed (CLAUDE.md: "ask
+# `stats-reviewer` before committing any analysis, evaluation code or results table"). plan-reviewer is per
+# step ("before reporting a step as done"), not per commit, so it is not enforced here.
+REVIEW_RULES = {
+    "stats-reviewer": ("src/gaze_cursor/eval/", "src/gaze_cursor/conditions.py", "scripts/session_report.py",
+                       "scripts/evaluate", "scripts/benchmark.py", "scripts/tune_", "scripts/diagnose_",
+                       "scripts/explore_", "data/results.csv"),
+}
+SKIP_REVIEW = re.compile(r"""\bSKIP_REVIEW=("[^"]*"|'[^']*'|\S+)""")
 
 
 def _read_input() -> dict:
@@ -183,6 +197,90 @@ def session_end(data: dict) -> int:
     return 0
 
 
+def _scoped_changes(top: Path, prefixes: tuple) -> list:
+    """Changed (modified, added, deleted or untracked) paths under ``prefixes`` in the working tree ``top``."""
+    out = _git("status", "--porcelain", "-uall", cwd=top)
+    paths = []
+    for ln in out.splitlines():
+        p = ln[3:].split(" -> ")[-1].strip().strip('"')
+        if p.startswith(prefixes):
+            paths.append(p)
+    return sorted(set(paths))
+
+
+def _scope_hash(top: Path, paths: list) -> str:
+    """Hash of the working-tree content of ``paths`` (a deleted file hashes as DELETED)."""
+    h = hashlib.sha256()
+    for p in paths:
+        f = top / p
+        h.update(p.encode() + b"\0")
+        h.update(f.read_bytes() if f.is_file() else b"DELETED")
+    return h.hexdigest()
+
+
+def _marker(name: str) -> Path:
+    return STATE / ("review_" + name.replace("-", "_") + ".json")
+
+
+def review_gate(cmd: str, top: Path) -> "str | None":
+    """Why this commit must wait for a reviewer, or None. Working-tree based, so `git add && git commit` in one
+    command is covered, and a commit of part of the changes still needs a review of all of them (conservative)."""
+    for name, prefixes in REVIEW_RULES.items():
+        paths = _scoped_changes(top, prefixes)
+        if not paths:
+            continue
+        digest = _scope_hash(top, paths)
+        try:
+            rec = json.loads(_marker(name).read_text())
+        except Exception:
+            rec = {}
+        if rec.get("hash") == digest and rec.get("tree") == str(top):
+            continue
+        m = SKIP_REVIEW.search(cmd)
+        reason = m.group(1).strip("\"'") if m else ""
+        if reason:
+            STATE.mkdir(parents=True, exist_ok=True)
+            with open(STATE / "review_skips.log", "a") as fh:
+                fh.write(json.dumps({"time": time.strftime("%Y-%m-%d %H:%M:%S"), "reviewer": name,
+                                     "reason": reason, "files": paths}) + "\n")
+            continue
+        shown = ", ".join(paths[:5]) + (" ..." if len(paths) > 5 else "")
+        return (f"Commit blocked: {name} has not been run on the current state of review-scoped files ({shown}). "
+                f"Run the {name} agent on this diff, fix its findings, then commit. The record is made when the agent "
+                f"is launched and goes stale if these files change afterwards. Rule: reviewers run per commit, not per "
+                f"step. Override (logged in .claude/state/review_skips.log): SKIP_REVIEW=\"reason\" git commit ...")
+    return None
+
+
+def _record_review(name: str, top: Path) -> None:
+    paths = _scoped_changes(top, REVIEW_RULES[name])
+    STATE.mkdir(parents=True, exist_ok=True)
+    _marker(name).write_text(json.dumps({
+        "hash": _scope_hash(top, paths), "tree": str(top), "files": paths,
+        "time": time.strftime("%Y-%m-%d %H:%M:%S")}))
+
+
+def review_record(data: dict) -> int:
+    """PostToolUse on the Agent tool: remember which state a reviewer agent was launched on."""
+    if data.get("tool_name") not in ("Agent", "Task"):
+        return 0
+    name = (data.get("tool_input") or {}).get("subagent_type")
+    top = _toplevel(_cwd(data))
+    if name in REVIEW_RULES and top is not None and _same_repo(top):
+        _record_review(name, top)
+    return 0
+
+
+def review_ok(name: str) -> int:
+    """Manual fallback: `guard.py review-ok stats-reviewer`, run in the repo after launching the reviewer."""
+    top = _toplevel(Path.cwd())
+    if name not in REVIEW_RULES or top is None or not _same_repo(top):
+        print(f"usage: guard.py review-ok <{'|'.join(REVIEW_RULES)}> (run inside the repo)", file=sys.stderr)
+        return 1
+    _record_review(name, top)
+    return 0
+
+
 def pre_commit(data: dict) -> int:
     cmd = (data.get("tool_input") or {}).get("command", "")
     if "commit" not in cmd:
@@ -191,6 +289,10 @@ def pre_commit(data: dict) -> int:
     top = _toplevel(d) if d is not None else None
     if top is None or not _same_repo(top):
         return 0                                   # not a commit, or a commit in another repo (notes)
+    why = review_gate(cmd, top)
+    if why:
+        print(why, file=sys.stderr)
+        return 2
     py = next((p for p in (MAIN / ".venv" / "bin" / "python", top / ".venv" / "bin" / "python") if p.exists()), None)
     if py is None:
         print("pre-commit hook: no .venv found (run `uv sync` in the main checkout); tests NOT run.", file=sys.stderr)
@@ -288,9 +390,11 @@ def stop(data: dict) -> int:
 
 def main() -> int:
     event = sys.argv[1] if len(sys.argv) > 1 else ""
+    if event == "review-ok":
+        return review_ok(sys.argv[2] if len(sys.argv) > 2 else "")
     data = _read_input()
     handlers = {"session_start": session_start, "session_end": session_end, "pre_commit": pre_commit,
-                "protect": protect, "stop": stop}
+                "protect": protect, "stop": stop, "review_record": review_record}
     fn = handlers.get(event)
     return fn(data) if fn else 0
 
