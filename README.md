@@ -29,12 +29,13 @@ uv run scripts/viewer.py                 # live face mesh, irises, head pose, FP
 
 ### One-click launchers
 
-Double-click these in Finder. They open Terminal, which already has the Camera permission. If macOS will not open one, run `chmod +x Calibrate.command Run.command` once.
+Double-click these in Finder. They open Terminal, which already has the Camera permission. If macOS will not open one, run `chmod +x Calibrate.command Run.command Practice.command` once.
 
 | Launcher | What it does |
 | --- | --- |
 | **`Calibrate.command`** | Asks for an optional note, then (1) a dark, calibration-like screen with a live lighting reading, the brightness gate and front-light tips (SPACE continues, ESC quits), (2) the live setup checklist, (3) the 25-dot calibration. The lighting is captured automatically and saved with the session. |
 | **`Run.command`** | Starts the live gaze dot with your latest calibration, after a position and lighting check. If you have not calibrated yet it tells you to run `Calibrate.command` first. It will switch to real cursor control when M3 is built. |
+| **`Practice.command`** | Target practice: a box appears and you move the gaze dot into it with your eyes, holding it until the box fills. The box shrinks after hits and grows after misses; the summary tells you the smallest box you can reliably hit, how fast you hit, how far the dot sits from where you look, and whether it is systematically shifted. Uses your latest calibration (`--pool` for all calibrations in the same lighting). |
 
 ## Recording a session
 
@@ -91,6 +92,7 @@ Each session also saves a compressed crop of your face for every frame (`<sessio
 ```bash
 uv run scripts/gaze_overlay.py           # live gaze dot, using the latest session (q or ESC quits)
 uv run scripts/gaze_overlay.py --pool    # experimental: all calibrations recorded in the same lighting
+uv run scripts/target_practice.py        # move the dot into boxes; measures what you can actually hit
 uv run scripts/positions.py              # recent sessions: lighting, measured head position, role in the position test
 uv run scripts/check_setup.py            # live posture gauges against your recorded sessions
 uv run scripts/benchmark.py              # fit on calibration, report error on held-out dots
@@ -147,12 +149,13 @@ Around the pipeline: `posture.py` (setup checklist, reference posture, lighting)
 ## Project layout
 
 ```
-Calibrate.command, Run.command   one-click launchers (macOS)
+Calibrate.command, Run.command, Practice.command   one-click launchers (macOS)
 src/gaze_cursor/                 capture, landmarks, features, calibration, posture, config, eval/, sinks/
-scripts/                         viewer, download_model, calibrate, check_setup, gaze_overlay, benchmark, evaluate, positions, diagnose_positions
+scripts/                         viewer, download_model, calibrate, check_setup, gaze_overlay, benchmark, evaluate, positions, diagnose_positions, target_practice
 tests/                           pytest suite
 data/sessions/                   recorded sessions and face images (gitignored)
 data/dry_runs/, data/excluded/   practice and excluded sessions (gitignored)
+data/tasks/                      target-practice recordings (gitignored, never used as calibrations)
 data/results.csv                 benchmark and evaluation log
 models/                          downloaded model files (gitignored)
 PLAN.md, PROGRESS.md             milestones; findings, decisions and pre-registrations
@@ -161,7 +164,7 @@ PLAN.md, PROGRESS.md             milestones; findings, decisions and pre-registr
 ## Development
 
 ```bash
-uv run pytest                            # 142 unit tests
+uv run pytest                            # 152 unit tests
 ```
 
 ## Roadmap

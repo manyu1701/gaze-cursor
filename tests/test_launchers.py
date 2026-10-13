@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-LAUNCHERS = ("Calibrate.command", "Run.command")
+LAUNCHERS = ("Calibrate.command", "Run.command", "Practice.command")
 
 
 @pytest.mark.parametrize("name", LAUNCHERS)
@@ -38,3 +38,8 @@ def test_run_launcher_explains_when_there_is_no_calibration(tmp_path: Path) -> N
     r = subprocess.run(["bash", str(tmp_path / "Run.command")], stdin=subprocess.DEVNULL,
                        capture_output=True, text=True, timeout=30)
     assert r.returncode == 1 and "No calibration found yet" in r.stdout and "Calibrate.command" in r.stdout
+
+
+def test_practice_launcher_starts_target_practice() -> None:
+    text = (ROOT / "Practice.command").read_text()
+    assert "scripts/target_practice.py" in text and "No calibration found yet" in text

@@ -27,3 +27,17 @@ def test_pool_keeps_same_lighting_clean_v2_sessions() -> None:
 def test_anchor_without_lighting_pools_alone() -> None:
     anchor = _s(0, None, "2026-10-13T05:35:00")
     assert pool_sessions([anchor, _s(1, "front-lit", "2026-10-13T05:20:00")], anchor) == [anchor]
+
+
+def test_fit_live_model_single_and_pooled(monkeypatch) -> None:
+    from gaze_cursor import live
+    from gaze_cursor.config import ScreenConfig
+    anchor = _s(0, "front-lit", "2026-10-13T05:35:00")
+    other = _s(1, "front-lit", "2026-10-13T05:20:00")
+    one = live.fit_live_model(anchor, ScreenConfig())
+    assert one.sessions == [anchor] and one.x_train.shape[1] == 4 and "on 00" in one.label
+    monkeypatch.setattr(live, "session_files", lambda: ["a", "b"])
+    monkeypatch.setattr(live, "load_session", {"a": anchor, "b": other}.__getitem__)
+    pooled = live.fit_live_model(anchor, ScreenConfig(), pool=True)
+    assert pooled.sessions == [other, anchor] and "pooled over 2 'front-lit'" in pooled.label
+    assert len(pooled.x_train) == len(anchor.features) + len(other.features)   # every target of each

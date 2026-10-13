@@ -11,3 +11,5 @@ data/dry_runs/*
 !data/dry_runs/.gitkeep
 data/excluded/*
 !data/excluded/.gitkeep
+data/tasks/*
+!data/tasks/.gitkeep

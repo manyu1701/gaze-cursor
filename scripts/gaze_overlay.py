@@ -12,14 +12,14 @@ from pathlib import Path
 
 import numpy as np
 
-from gaze_cursor.calibration import MODELS, GazeModel
+from gaze_cursor.calibration import MODELS
 from gaze_cursor.capture import Camera
 from gaze_cursor.config import ScreenConfig
-from gaze_cursor.eval.configs import REGISTRY
-from gaze_cursor.eval.session import CALIB, latest_session, load_session, session_files
+from gaze_cursor.eval.session import latest_session, load_session
 from gaze_cursor.features import FEATURE_SETS, assemble, extract_features
 from gaze_cursor.landmarks import FaceTracker
-from gaze_cursor.pool import POOL_CONFIG, pool_sessions
+from gaze_cursor.live import fit_live_model
+from gaze_cursor.pool import POOL_CONFIG
 from gaze_cursor.posture import Reference, posture_metrics
 from gaze_cursor.sinks.overlay import FullscreenCanvas
 from gaze_cursor.sinks.posture_view import draw_chip, run_posture_check
@@ -46,19 +46,10 @@ def main() -> None:
     cfg = ScreenConfig.from_system()
     if (cfg.width_px, cfg.height_px) != (session.meta["screen"]["width_px"], session.meta["screen"]["height_px"]):
         print("warning: screen size differs from the session's; recalibrate for accurate results")
-    if args.pool:
-        pool = pool_sessions([load_session(p) for p in session_files()], session)
-        pc = REGISTRY[POOL_CONFIG]
-        args.features = pc.feature_set
-        parts = [s.select_all(pc.feature_set) for s in pool]   # every target of every pooled session
-        x_tr, y_tr = np.concatenate([p[0] for p in parts]), np.concatenate([p[1] for p in parts])
-        model = pc.make_model(cfg).fit(x_tr, y_tr)
-        print(f"pooled {len(pool)} calibration(s) in '{(session.meta.get('lighting') or {}).get('label', 'unknown')}' "
-              f"lighting: {', '.join(s.path.stem.removeprefix('session_') for s in pool)}")
-    else:
-        pool = [session]
-        x_tr, y_tr, _ = session.select(CALIB, args.features)
-        model = GazeModel(args.model).fit(x_tr, y_tr)
+    live = fit_live_model(session, cfg, pool=args.pool, feature_set=args.features, kind=args.model)
+    model, x_tr, pool = live.model, live.x_train, live.sessions
+    args.features = live.feature_set
+    print("model: " + live.label)
     recent: deque[np.ndarray] = deque(maxlen=SMOOTH_FRAMES)
     mu, sd = x_tr.mean(axis=0), x_tr.std(axis=0) + 1e-9
     worst_z = 0.0
