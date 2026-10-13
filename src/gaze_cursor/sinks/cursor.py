@@ -93,16 +93,24 @@ def input_monitoring_granted() -> bool:
     return bool(Quartz.CGPreflightListenEventAccess())
 
 
+INPUT_MONITORING_PANE = "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+
+
 def request_input_monitoring() -> None:
-    """Ask macOS to show the Input Monitoring prompt / list Terminal in System Settings."""
+    """Ask macOS to list Terminal under Input Monitoring, and open that settings page."""
+    import subprocess
+
     import Quartz
     Quartz.CGRequestListenEventAccess()
+    subprocess.run(["open", INPUT_MONITORING_PANE], check=False)
 
 
 PERMISSION_HELP = (
-    "Cursor mode needs Input Monitoring for the app running Python (Terminal):\n"
-    "  System Settings > Privacy & Security > Input Monitoring > enable Terminal, then quit and reopen\n"
-    "  Terminal and run again. (It only listens for the hotkeys and your clicks; it never blocks them.)")
+    "Cursor mode needs Input Monitoring for the app running Python (Terminal). The settings page is open:\n"
+    "  1. Switch Terminal ON under Input Monitoring (add it with + if it is not listed).\n"
+    "  2. Quit Terminal completely (Cmd+Q) and reopen it: macOS only applies this permission after a restart.\n"
+    "  3. Run Cursor.command again.\n"
+    "  (It only listens for the hotkeys and your clicks; it never blocks or changes them.)")
 
 
 class MacCursor:
