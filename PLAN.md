@@ -43,6 +43,8 @@ Ordered by what the M1 data says matters most (see PROGRESS.md, "Independent ana
 
 **Done when:** a results table with CIs shows, on held-out targets *and* held-out sessions, which changes improved accuracy and by how much (the portfolio write-up starts here).
 
+**Status (end of 2026-10-13):** steps 1, 2, 2b, 3 and 6 done; step 4 partly; 5, 7-9 open. Remaining before M2 is closed: the head-transform check (offline) and the results table. Run now has the quick 9-dot calibration, One-Euro smoothing and live tests (T / A / P). See PROGRESS.md "Start here".
+
 ## M3: Control the real cursor
 
 - Cursor sink using Quartz CGEvent (Accessibility permission).
