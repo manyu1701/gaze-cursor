@@ -1,9 +1,11 @@
 """Live tests inside Run: target boxes and a path to follow, with scoring. Pure functions.
 
-Targets test: boxes appear one at a time; a box is HIT when the gaze dot stays inside it for
-DWELL_MS, and times out after TIMEOUT_MS. Measures: hit rate, time to first entry and to hit
-(snappy), jitter of the dot while inside (steady), and the offset of the dot from the box centre
-(accurate, with its direction).
+Targets test (dot visible): boxes appear one at a time; a box is HIT when the gaze dot stays inside
+it for DWELL_MS, and times out after TIMEOUT_MS. Measures: hit rate, time to first entry and to hit
+(snappy), jitter of the dot while holding (steady), and the median offset of the dot from the box
+centre during the box (accurate; median, so a chase at the end of a miss does not dominate).
+Accuracy test (dot hidden): each target is shown for ACC_SHOW_MS and the user just looks at it;
+scored from ACC_FROM_MS on. No feedback, so no chasing: the fair comparison with offline accuracy.
 Path test: a target glides along a loop around the screen and a figure 8 at PATH_SPEED_DEG deg/s;
 the user follows it. Measures: mean distance from the target, share of time within 3 deg, and the
 lag (time shift that best aligns the dot with the target).
@@ -20,7 +22,10 @@ from gaze_cursor.config import ScreenConfig
 
 DWELL_MS = 500.0
 TIMEOUT_MS = 4000.0
-BOX_SIZES_DEG = (5.0, 3.0)
+BOX_SIZES_DEG = (6.0, 4.0)       # 3 deg was below the tracker's ~2.5 deg accuracy (first live run)
+SCORE_FROM_MS = 300.0             # a box's offset is scored from this long after it appears
+ACC_SHOW_MS, ACC_FROM_MS = 1500.0, 400.0
+ACC_SIZE_DEG = 4.0
 N_BOXES = 12
 MIN_HOP_DEG = 8.0          # consecutive boxes at least this far apart, so every box needs a real move
 PATH_SPEED_DEG = 8.0       # deg/s, an easy smooth-pursuit speed
@@ -117,20 +122,57 @@ class BoxTrial:
         return self.status
 
     def result(self, cfg: ScreenConfig) -> dict:
-        """Offset and jitter over the last DWELL_MS of the trial (the hold, or the final half
-        second of a timeout), in degrees."""
+        """Median offset and error from SCORE_FROM_MS after the box appeared to the end of the trial;
+        jitter over the last DWELL_MS (the hold, or the final half second of a timeout). Degrees."""
         s = np.array(self.samples) if self.samples else np.zeros((0, 3))
+        scored = s[s[:, 0] >= self.start_ms + SCORE_FROM_MS] if len(s) else s
+        if not len(scored):
+            scored = s
         end = s[-1, 0] if len(s) else self.start_ms
         last = s[s[:, 0] >= end - DWELL_MS] if len(s) else s
-        if len(last):
-            off = last[:, 1:].mean(axis=0) - np.array(self.box.center)
+        if len(scored):
+            off = np.median(scored[:, 1:], axis=0) - np.array(self.box.center)
+            err = float(to_deg(np.median(np.linalg.norm(scored[:, 1:] - np.array(self.box.center), axis=1)), cfg))
             jitter = float(to_deg(np.sqrt(last[:, 1:].var(axis=0).sum()), cfg))
         else:
-            off, jitter = np.array([np.nan, np.nan]), np.nan
+            off, err, jitter = np.array([np.nan, np.nan]), np.nan, np.nan
         return {"size_deg": self.box.size_deg, "center": self.box.center, "hit": self.status == "hit",
                 "first_entry_ms": self.first_entry_ms, "hit_ms": self.hit_ms,
-                "offset_deg": tuple(float(v) for v in to_deg(off, cfg)),
-                "error_deg": float(to_deg(np.linalg.norm(off), cfg)), "jitter_deg": jitter}
+                "offset_deg": tuple(float(v) for v in to_deg(off, cfg)), "error_deg": err, "jitter_deg": jitter}
+
+
+def accuracy_result(samples: list[tuple[float, float, float]], center: tuple[float, float], start_ms: float,
+                    cfg: ScreenConfig) -> dict:
+    """One hidden-dot target: median offset / error and spread of the (raw-or-filtered) predictions
+    from ACC_FROM_MS to ACC_SHOW_MS after it appeared. Degrees."""
+    s = np.array(samples) if samples else np.zeros((0, 3))
+    s = s[(s[:, 0] >= start_ms + ACC_FROM_MS) & (s[:, 0] < start_ms + ACC_SHOW_MS)] if len(s) else s
+    if len(s) < 3:
+        return {"center": center, "n": int(len(s)), "offset_deg": (np.nan, np.nan), "error_deg": np.nan,
+                "jitter_deg": np.nan}
+    c = np.array(center)
+    off = np.median(s[:, 1:], axis=0) - c
+    return {"center": center, "n": int(len(s)), "offset_deg": tuple(float(v) for v in to_deg(off, cfg)),
+            "error_deg": float(to_deg(np.median(np.linalg.norm(s[:, 1:] - c, axis=1)), cfg)),
+            "jitter_deg": float(to_deg(np.sqrt(s[:, 1:].var(axis=0).sum()), cfg))}
+
+
+def summarize_accuracy(results: list[dict]) -> dict:
+    """Mean / median error over targets, overall offset, jitter, share within 2.5 deg, and per screen
+    third (top / middle / bottom), so a vertical shift shows up."""
+    r = [x for x in results if np.isfinite(x["error_deg"])]
+    if not r:
+        return {"n": 0}
+    err = np.array([x["error_deg"] for x in r])
+    off = np.array([x["offset_deg"] for x in r])
+    out = {"n": len(r), "error_deg": float(err.mean()), "median_deg": float(np.median(err)),
+           "within_2_5": float((err <= 2.5).mean()), "offset_deg": tuple(float(v) for v in off.mean(axis=0)),
+           "jitter_deg": float(np.mean([x["jitter_deg"] for x in r]))}
+    ys = np.array([x["center"][1] for x in r])
+    edges = np.quantile(ys, [1 / 3, 2 / 3]) if len(r) >= 3 else np.array([np.inf, np.inf])
+    for name, m in (("top", ys < edges[0]), ("middle", (ys >= edges[0]) & (ys < edges[1])), ("bottom", ys >= edges[1])):
+        out[f"dy_{name}_deg"] = float(off[m, 1].mean()) if m.any() else float("nan")
+    return out
 
 
 def summarize_boxes(results: list[dict]) -> dict:

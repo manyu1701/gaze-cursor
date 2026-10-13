@@ -5,6 +5,7 @@ import pytest
 
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.livetest import (
+    ACC_FROM_MS, ACC_SHOW_MS, accuracy_result, summarize_accuracy,
     DWELL_MS, MIN_HOP_DEG, TIMEOUT_MS, BoxTrial, LiveStats, PathTarget, head_moved, head_shift, make_boxes,
     pursuit_summary, px_per_deg, summarize_boxes)
 
@@ -14,7 +15,7 @@ CFG = ScreenConfig()
 def test_boxes_are_visible_spread_and_need_real_moves() -> None:
     boxes = make_boxes(CFG, seed=3)
     ppd = px_per_deg(CFG)
-    assert len(boxes) == 12 and {b.size_deg for b in boxes} == {3.0, 5.0}
+    assert len(boxes) == 12 and {b.size_deg for b in boxes} == {4.0, 6.0}
     for b in boxes:
         x, y = b.center
         assert b.half_px <= x <= CFG.width_px - b.half_px and CFG.top_inset_pt + b.half_px <= y <= CFG.height_px - b.half_px
@@ -86,3 +87,30 @@ def test_live_stats_and_head_shift() -> None:
     assert head_shift(ref, ref) == (1.0, 0.0, 0.0) and not head_moved(1.0, 0.0, 0.0)
     ratio, dx, dy = head_shift({"distance": 0.066, "x": 0.56, "y": 0.5}, ref)
     assert dx == pytest.approx(5.7, abs=0.1) and head_moved(ratio, dx, dy) and head_moved(1.2, 0, 0)
+
+
+def test_a_chase_at_the_end_of_a_miss_does_not_dominate_its_offset() -> None:
+    box = make_boxes(CFG)[0]
+    c = np.array(box.center)
+    tr = BoxTrial(box, 0.0)
+    t = 0.0
+    while t < 3000:                                        # 3 s just outside the box, 1 deg off
+        t += 33; tr.update(t, c + [box.half_px + px_per_deg(CFG), 0])
+    while not tr.done:                                     # then a 1 s chase far away
+        t += 33; tr.update(t, c + [12 * px_per_deg(CFG), 0])
+    r = tr.result(CFG)
+    assert not r["hit"] and r["error_deg"] < 0.5 * 12
+
+
+def test_accuracy_result_scores_only_the_settled_window_and_finds_a_vertical_shift() -> None:
+    ppd = px_per_deg(CFG)
+    res = []
+    for k, y in enumerate((150.0, 480.0, 850.0)):
+        c = (700.0, y)
+        samples = [(t, 700.0 + 300.0 * (t < ACC_FROM_MS), y - 2 * ppd) for t in np.arange(0, ACC_SHOW_MS, 33.0)]
+        r = accuracy_result(samples, c, 0.0, CFG)
+        assert r["error_deg"] == pytest.approx(2.0, abs=0.05) and r["offset_deg"][1] == pytest.approx(-2.0, abs=0.05)
+        res.append(r)
+    s = summarize_accuracy(res)
+    assert s["n"] == 3 and s["within_2_5"] == 1.0 and s["dy_top_deg"] == pytest.approx(-2.0, abs=0.05)
+    assert accuracy_result([], (0.0, 0.0), 0.0, CFG)["n"] == 0

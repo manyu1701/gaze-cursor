@@ -42,6 +42,14 @@ def draw_box(canvas: FullscreenCanvas, img: np.ndarray, box: Box, dwell: float, 
     cv2.line(img, (x, y - 6), (x, y + 6), color, 1, cv2.LINE_AA)
 
 
+def draw_ring(canvas: FullscreenCanvas, img: np.ndarray, center: tuple[float, float], progress: float) -> None:
+    """A hidden-dot accuracy target: a ring with a centre point; an outer arc shows the time left."""
+    x, y = canvas._px(center)
+    cv2.circle(img, (x, y), 18, WHITE, 2, cv2.LINE_AA)
+    cv2.circle(img, (x, y), 3, WHITE, -1, cv2.LINE_AA)
+    cv2.ellipse(img, (x, y), (28, 28), -90, 0, int(360 * min(max(progress, 0.0), 1.0)), GREY, 2, cv2.LINE_AA)
+
+
 def draw_path(canvas: FullscreenCanvas, img: np.ndarray, path: PathTarget, t_s: float, close: bool) -> None:
     """The whole path faintly, and the moving target (green when the dot is close to it)."""
     pts = np.array([canvas._px(tuple(p)) for p in path.points], np.int32)
@@ -83,7 +91,7 @@ def result_screen(canvas: FullscreenCanvas, title: str, lines: list[tuple[str, t
     cv2.putText(img, title, (60, y), cv2.FONT_HERSHEY_SIMPLEX, 1.0, WHITE, 2, cv2.LINE_AA)
     for k, (text, color) in enumerate(lines):
         _put(img, text, (60, y + 44 + 32 * k), color, 0.7, 2)
-    canvas.text(img, "SPACE: back to the gaze dot     T: targets again     P: path again     q: quit", y=canvas.size[1] - 40)
+    canvas.text(img, "SPACE: back to the gaze dot   T: targets   A: accuracy   P: path   q: quit", y=canvas.size[1] - 40)
     return img
 
 

@@ -55,3 +55,17 @@ def test_live_panel_prompts_after_head_movement() -> None:
     still = [t for t, _ in go.live_lines(st, CFG, (1.0, 0.5, 0.2), 0.0)]
     moved = [t for t, _ in go.live_lines(st, CFG, (1.0, 6.0, 0.0), 0.0)]
     assert not any("you moved" in t for t in still) and any("you moved" in t for t in moved)
+
+
+def test_accuracy_test_hides_feedback_and_scores_a_planted_shift() -> None:
+    go = _overlay()
+    from gaze_cursor.livetest import px_per_deg
+    test = go.LiveTest("accuracy", CFG, 0.0)
+    t = 0.0
+    while not test.done:
+        t += 33.3
+        d = np.array(test.target_at(t)) + [0.0, -1.5 * px_per_deg(CFG)]     # 1.5 deg too high
+        test.update(t, d, d, (1.0, 0.0, 0.0), np.zeros(4))
+    title, lines, s, boxes = test.summary()
+    assert "dot hidden" in title and s["n"] == 12 and len(boxes) == 12
+    assert abs(s["offset_deg"][1] + 1.5) < 0.1 and s["within_2_5"] == 1.0 and "1.5 deg high" in lines[1][0]

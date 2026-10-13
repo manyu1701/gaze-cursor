@@ -2,8 +2,9 @@
 draws where you're looking; R recalibrates at any time (e.g. after you move). A live panel shows
 fps, latency, tracking, jitter and how far your head moved since calibrating.
 
-Live tests (T, P): a targets test (12 boxes; hold the dot in each for 0.5 s) and a path test (follow
-a gliding target for ~30 s). Each ends with a result screen; every frame is saved to data/quick/
+Live tests: T targets (12 boxes of 6 and 4 deg; hold the dot in each for 0.5 s), A accuracy (the
+dot is hidden; look at each of 12 targets for 1.5 s: pure accuracy, no chasing), P path (follow a
+gliding target for ~30 s). Each ends with a result screen; every frame is saved to data/quick/
 and the summary is logged to data/results.csv, so steadiness, snappiness and accuracy can be
 analysed offline.
 
@@ -13,7 +14,7 @@ Usage:
   uv run scripts/gaze_overlay.py session.npz [--model ridge|poly2] [--features gaze|...]
 
 Keys: SPACE start, L latest full calibration (start screen), R recalibrate, T targets test,
-P path test, ESC ends a test, q quits.
+A accuracy test, P path test, ESC ends a test, q quits.
 Why quick by default: the pre-registered round-3 test (PROGRESS.md) found that moving your head
 costs ~2 deg with a fixed calibration and that a fresh 9-dot calibration recovers most of it.
 """
@@ -39,19 +40,23 @@ from gaze_cursor.filters import RUN_FILTER, make_filter
 from gaze_cursor.eval.results_log import append_rows, now
 from gaze_cursor.landmarks import FaceTracker
 from gaze_cursor.livetest import (
-    TIMEOUT_MS, WITHIN_DEG, BoxTrial, LiveStats, PathTarget, head_moved, head_shift, make_boxes, pursuit_summary,
-    summarize_boxes, to_deg)
+    ACC_SHOW_MS, ACC_SIZE_DEG, BOX_SIZES_DEG, TIMEOUT_MS, WITHIN_DEG, BoxTrial, LiveStats, PathTarget,
+    accuracy_result, head_moved, head_shift, make_boxes, pursuit_summary, summarize_accuracy, summarize_boxes,
+    to_deg)
 from gaze_cursor.posture import LIGHT_MIN_FACE, Reference, lighting_label, lighting_stats, posture_metrics
 from gaze_cursor.quick import (
     QUICK_CONFIG, QUICK_DOTS, QUICK_LAYOUT, QUICK_RECORD_S, QUICK_SETTLE_S, fit_quick, fit_report,
     missing_dots, quick_targets)
 from gaze_cursor.sinks.livetest_view import (
-    AMBER as P_AMBER, GREEN, GREY as P_GREY, RED, WHITE, draw_box, draw_gaze, draw_panel, draw_path, result_screen)
+    AMBER as P_AMBER, GREEN, GREY as P_GREY, RED, WHITE, draw_box, draw_gaze, draw_panel, draw_path, draw_ring,
+    result_screen)
 from gaze_cursor.sinks.overlay import FullscreenCanvas
 from gaze_cursor.sinks.posture_view import run_posture_check
 
 OOD_Z = 4.0  # warn when a live feature is this many calibration std-devs from its mean
 STAGES = ("camera read", "landmarks", "features + predict + filter", "draw + show")
+TEST_KEYS = {ord("t"): "targets", ord("T"): "targets", ord("a"): "accuracy", ord("A"): "accuracy",
+             ord("p"): "path", ord("P"): "path"}
 QUICK_DIR = SESSIONS_DIR.parent / "quick"   # gitignored; never read by the research analyses
 REDO_DEG = 4.0  # quick fit worse than this on its own dots: suggest redoing it
 GREY, AMBER = (150, 150, 150), (0, 170, 255)
@@ -264,11 +269,12 @@ def main() -> None:
             if test is not None:
                 draw_panel(canvas, img, test.lines(), "right")
                 test.draw(canvas, img, time.monotonic() * 1000)
-            draw_gaze(canvas, img, dot, raw)
+            if test is None or test.kind != "accuracy":      # the accuracy test hides the dot (no chasing)
+                draw_gaze(canvas, img, dot, raw)
             if test is not None:
                 canvas.text(img, "ESC: end the test", y=canvas.size[1] - 30)
             else:
-                canvas.text(img, "T: targets test     P: path test     R: recalibrate here     q: quit",
+                canvas.text(img, "T: targets   A: accuracy (dot hidden)   P: path   R: recalibrate   q: quit",
                             y=canvas.size[1] - 30)
             key = canvas.show(img)
             t4 = time.monotonic() * 1000
@@ -280,8 +286,8 @@ def main() -> None:
                 timing.append([np.nan] * 5)
             if key == ord("q") or (key == 27 and test is None):
                 break
-            if test is None and key in (ord("t"), ord("T"), ord("p"), ord("P")):
-                test = LiveTest("targets" if key in (ord("t"), ord("T")) else "path", cfg, time.monotonic() * 1000)
+            if test is None and key in TEST_KEYS:
+                test = LiveTest(TEST_KEYS[key], cfg, time.monotonic() * 1000)
             if test is None and key in (ord("r"), ord("R")):
                 out = calibrate_here(cam, tracker, canvas, cfg)
                 if out is None:
@@ -321,9 +327,10 @@ class LiveTest:
         self.rows: list[list[float]] = []    # t, raw x y, dot x y, target x y, trial, head ratio dx dy
         self.feats: list[np.ndarray] = []
         self.done = False
-        if kind == "targets":
+        if kind in ("targets", "accuracy"):
             self.seed = int(start_ms) % 2**31
-            self.boxes = make_boxes(cfg, seed=self.seed)
+            sizes = BOX_SIZES_DEG if kind == "targets" else (ACC_SIZE_DEG,)
+            self.boxes = make_boxes(cfg, sizes_deg=sizes, seed=self.seed)
             self.trials = [BoxTrial(self.boxes[0], start_ms)]
         else:
             self.path = PathTarget(cfg)
@@ -333,7 +340,7 @@ class LiveTest:
         return self.trials[-1]
 
     def target_at(self, t_ms: float) -> np.ndarray:
-        if self.kind == "targets":
+        if self.kind in ("targets", "accuracy"):
             return np.array(self.trial.box.center)
         return self.path.at((t_ms - self.start_ms) / 1000)
 
@@ -343,9 +350,18 @@ class LiveTest:
         tgt = self.target_at(t_ms)
         nan2 = [np.nan, np.nan]
         self.rows.append([t_ms, *(raw if raw is not None else nan2), *(dot if dot is not None else nan2), *tgt,
-                          len(self.trials) - 1 if self.kind == "targets" else 0, *(shift or [np.nan] * 3)])
+                          len(self.trials) - 1 if self.kind != "path" else 0, *(shift or [np.nan] * 3)])
         self.feats.append(x if x is not None else np.full(4, np.nan))
-        if self.kind == "targets":
+        if self.kind == "accuracy":
+            if dot is not None:
+                self.trial.samples.append((t_ms, float(dot[0]), float(dot[1])))
+            if t_ms - self.trial.start_ms >= ACC_SHOW_MS:
+                self.trial.status = "shown"
+                if len(self.trials) == len(self.boxes):
+                    self.done = True
+                else:
+                    self.trials.append(BoxTrial(self.boxes[len(self.trials)], t_ms))
+        elif self.kind == "targets":
             self.trial.update(t_ms, dot)
             if self.trial.done:
                 if len(self.trials) == len(self.boxes):
@@ -356,7 +372,9 @@ class LiveTest:
             self.done = True
 
     def draw(self, canvas: FullscreenCanvas, img: np.ndarray, now_ms: float) -> None:
-        if self.kind == "targets":
+        if self.kind == "accuracy":
+            draw_ring(canvas, img, self.trial.box.center, (now_ms - self.trial.start_ms) / ACC_SHOW_MS)
+        elif self.kind == "targets":
             tr = self.trial
             draw_box(canvas, img, tr.box, tr.dwell_fraction(now_ms), tr.status == "inside")
         else:
@@ -365,7 +383,14 @@ class LiveTest:
                 to_deg(np.hypot(self.rows[-1][3] - self.rows[-1][5], self.rows[-1][4] - self.rows[-1][6]), self.cfg) <= WITHIN_DEG
             draw_path(canvas, img, self.path, t_s, close)
 
+    def _acc_results(self) -> list[dict]:
+        done = self.trials if self.done else self.trials[:-1]
+        return [accuracy_result(t.samples, t.box.center, t.start_ms, self.cfg) for t in done]
+
     def lines(self) -> list[tuple[str, tuple]]:
+        if self.kind == "accuracy":
+            return [(f"Accuracy test: target {len(self.trials)}/{len(self.boxes)}", WHITE),
+                    ("look at the centre of each ring; the dot is hidden on purpose", P_GREY)]
         if self.kind == "targets":
             res = [t.result(self.cfg) for t in self.trials if t.done]
             hits = sum(r["hit"] for r in res)
@@ -390,14 +415,31 @@ class LiveTest:
         a = np.array(self.rows) if self.rows else np.zeros((0, 11))
         head = a[:, 8:11] if len(a) else np.zeros((0, 3))
         moved = float(np.mean([head_moved(*h) for h in head if np.all(np.isfinite(h))])) if len(head) else float("nan")
+        if self.kind == "accuracy":
+            res = self._acc_results()
+            s = summarize_accuracy(res)
+            if not s.get("n"):
+                return "Accuracy test", [("no targets scored", RED)], s, res
+            dx, dy = s["offset_deg"]
+            lines = [(f"accurate: median error {s['median_deg']:.1f} deg (mean {s['error_deg']:.1f}) over {s['n']} targets;"
+                      f" within 2.5 deg on {s['within_2_5'] * 100:.0f}%", WHITE),
+                     (f"overall shift {abs(dx):.1f} deg {'right' if dx > 0 else 'left'}, {abs(dy):.1f} deg "
+                      f"{'low' if dy > 0 else 'high'}   (vertical by screen third: top {s['dy_top_deg']:+.1f}, "
+                      f"middle {s['dy_middle_deg']:+.1f}, bottom {s['dy_bottom_deg']:+.1f}; + = low)", WHITE),
+                     (f"steady: jitter {s['jitter_deg']:.2f} deg while looking at a target", WHITE)]
+            s["head_moved_frac"] = moved
+            if np.isfinite(moved) and moved > 0.1:
+                lines.append((f"your head was away from the calibration position {moved * 100:.0f}% of the time", P_AMBER))
+            return "Accuracy test (dot hidden)", lines, s, [{**r, "size_deg": ACC_SIZE_DEG, "hit": r["error_deg"] <= 2.5}
+                                                            for r in res]
         if self.kind == "targets":
             res = [t.result(self.cfg) for t in self.trials if t.done]
             s = summarize_boxes(res)
             if not s.get("n"):
                 return "Targets test", [("no boxes finished", RED)], s, res
             dx, dy = s["offset_deg"]
-            lines = [(f"hits {s['hit_rate'] * 100:.0f}% of {s['n']} boxes   (5 deg boxes "
-                      f"{s.get('hit_rate_5deg', float('nan')) * 100:.0f}%, 3 deg boxes {s.get('hit_rate_3deg', float('nan')) * 100:.0f}%)", WHITE),
+            sizes = ", ".join(f"{z:g} deg boxes {s.get(f'hit_rate_{z:g}deg', float('nan')) * 100:.0f}%" for z in BOX_SIZES_DEG)
+            lines = [(f"hits {s['hit_rate'] * 100:.0f}% of {s['n']} boxes   ({sizes})", WHITE),
                      (f"snappy: first entry {s['median_entry_ms']:.0f} ms, hit {s['median_hit_ms']:.0f} ms (medians)", WHITE),
                      (f"accurate: off by {s['error_deg']:.1f} deg on average; overall shift {abs(dx):.1f} deg "
                       f"{'right' if dx > 0 else 'left'}, {abs(dy):.1f} deg {'low' if dy > 0 else 'high'}", WHITE),
@@ -444,7 +486,7 @@ def finish_test(cam: Camera, canvas: FullscreenCanvas, test: LiveTest, calib: st
     while True:
         cam.read()                          # keep the camera buffer fresh while the screen waits
         key = canvas.show(result_screen(canvas, title, lines, boxes))
-        if key in (32, ord("q"), ord("t"), ord("T"), ord("p"), ord("P"), 27):
+        if key in (32, ord("q"), 27) or key in TEST_KEYS:
             return -1 if key in (32, 27) else key
 
 
