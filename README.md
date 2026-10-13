@@ -4,10 +4,19 @@ Move the macOS cursor with your eyes, using only the built-in webcam.
 
 A learning and portfolio project: build a webcam gaze-estimation engine, then **measure it rigorously**. Accuracy is reported in pixels, centimetres and degrees of visual angle, with jitter, on held-out targets from recorded sessions.
 
-> **Status:** M0 (face and iris tracking) and M1 (first gaze estimate and baseline accuracy) are done. M2 is under way.
-> - The first pre-registered test (do richer, pose-free features beat iris-only features across sessions?) came out **not supported**: a gain of 0.12° with a 95% CI of −0.43° to +0.67°.
-> - The main finding so far, from *exploratory* analysis, is that **lighting matters far more than the model**: with a front light and a calibration made in that light the error was about 1.5°, in dim light 7 to 9°. A second pre-registered round tests this and is waiting on new recordings (see [`PROGRESS.md`](PROGRESS.md)).
-> - The live dot works. Real cursor control is M3 and is not built yet. See the [roadmap](#roadmap).
+> **Status:** M0, M1 and M2 are done; **M3 (real cursor control) is in progress and usable**.
+> - **Accuracy:** about 2.7° mean / 2.4° median on held-out targets (roughly 2–3 cm on screen), 30 fps, about 12 ms from camera frame to screen. Full results with confidence intervals, including what did *not* work: [`RESULTS.md`](RESULTS.md).
+> - **Biggest findings (pre-registered tests):** lighting and head position matter far more than the model; a 15-second 9-dot recalibration where you sit recovers most of the cost of moving your head.
+> - **Cursor mode:** tap Right Command and the real cursor jumps to where you look; finish with the trackpad. Learning from your clicks (self-recalibration) is built and being tested. See the [roadmap](#roadmap).
+
+## Try it (about 5 minutes)
+
+```bash
+git clone https://github.com/manyu1701/gaze-cursor.git && cd gaze-cursor
+uv sync && uv run scripts/download_model.py
+```
+
+Then double-click **`Run.command`** (live gaze dot with built-in accuracy tests) or **`Cursor.command`** (move the real cursor). Both start with a ~15 s calibration: look at 9 dots. Sit facing a light; a bright window behind you hurts accuracy a lot. Everything runs locally; no camera images or face data leave your Mac.
 
 ## What to expect
 
@@ -17,7 +26,8 @@ Webcam gaze is coarse. Typical accuracy is **2–5° (about 2–5 cm on screen a
 
 - macOS on Apple Silicon with a built-in webcam. Developed on a MacBook Air 13.6" (M5, 2560×1664).
 - [uv](https://docs.astral.sh/uv/). It installs Python 3.12, which is required because MediaPipe wheels do not support 3.13.
-- **Camera** permission for the app that runs Python (Terminal or VS Code); you are prompted on first run. Accessibility permission is only needed from M3, for cursor control.
+- **Camera** permission for the app that runs Python (Terminal or VS Code); you are prompted on first run.
+- **Input Monitoring** for Terminal, only for Cursor mode (it listens for the jump key and your clicks; it never blocks or changes them). macOS applies it only after you quit and reopen Terminal. No Accessibility permission is needed.
 
 ## Quick start
 
@@ -165,7 +175,7 @@ PLAN.md, PROGRESS.md             milestones; findings, decisions and pre-registr
 ## Development
 
 ```bash
-uv run pytest                            # 207 unit tests
+uv run pytest                            # 225 unit tests
 ```
 
 ## Roadmap
@@ -176,6 +186,17 @@ See [`PLAN.md`](PLAN.md) for details and each milestone's "done when" check.
 | --- | --- | --- |
 | M0 | See the face: live landmarks, head pose, FPS | Done |
 | M1 | First gaze estimate and first accuracy number | Done |
-| M2 | Make it good: evaluation harness, calibration redesign, lighting and replayable images, vertical bias, robustness, smoothing | In progress: steps 1, 2 and 2b built; H1 not supported; round-2 lighting tests waiting on recordings |
-| M3 | Control the real cursor: Quartz CGEvent, click triggers, warp mode | Planned |
+| M2 | Make it good: evaluation harness, calibration redesign, lighting, head position, smoothing | Done ([`RESULTS.md`](RESULTS.md)) |
+| M3 | Control the real cursor: gaze jump + trackpad, self-recalibration from clicks, usability test | In progress: Cursor mode works; click learning built, pre-registered test waiting on recordings |
 | M4 | Choose a direction: precision tricks, intent model, productivity vs accessibility | Planned |
+| M5 | Generalise: other webcams, screens, people, lighting | Later |
+
+## Contributing
+
+Friends and anyone curious are welcome. **Fork the repo, work on a branch in your fork, and open a pull request**; only the owner pushes to this repository. Please run `uv run pytest` before opening a PR, keep the measurement habits in [`CLAUDE.md`](CLAUDE.md) (held-out targets, CIs, no tuning on test data), and describe your setup (camera, screen, lighting) when you report numbers.
+
+**Privacy:** recordings (`data/sessions/`, `data/quick/`) contain face landmarks and stay on your own Mac; they are gitignored. Never commit them, and never record someone else without their consent.
+
+## License
+
+[MIT](LICENSE) © 2026 Abhimanyu Sen

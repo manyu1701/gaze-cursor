@@ -3,6 +3,8 @@ name = "gaze-cursor"
 version = "0.1.0"
 description = "Move the macOS cursor by tracking eye gaze through a webcam."
 requires-python = "==3.12.*"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "mediapipe>=1.1.0",
     "numpy>=2.5.4",
