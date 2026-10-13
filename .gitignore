@@ -12,3 +12,4 @@ data/dry_runs/*
 data/excluded/*
 !data/excluded/.gitkeep
 data/quick/
+.DS_Store

@@ -2,10 +2,11 @@
 
 Read this first in a new session, then `CLAUDE.md` and `PLAN.md`. Update it at the end of every work session.
 
-## Start here (handoff, end of session 2026-10-13)
+## Start here (handoff, end of session 2026-10-13; branch `claude/dreamy-ptolemy-mj1owu`, pushed)
 - **Where we are:** M0, M1 done. **M2 is nearly done:** steps 1, 2, 2b, 3 (head position: H4 + H5 supported; vertical bias: gate not real) and 6 (One-Euro smoothing + latency) are done; step 4 partly (33 sessions, lighting + positions); steps 5, 7, 8, 9 not started. M3 (real cursor) not started. Nothing is pushed.
 - **What Run does now** (`Run.command` -> `scripts/gaze_overlay.py`): 9-dot quick calibration where you sit (frozen round-3 winner, `quick.py`; redo if mean fit > 3.0 deg), One-Euro filter (`filters.RUN_FILTER`), live metrics panel (fps, frame -> screen latency, tracked %, jitter, head shift vs calibration with a "press R" prompt), live tests **T** targets (6 / 4 deg boxes), **A** accuracy (dot hidden), **P** path; every test saved to `data/quick/livetest_*.npz` + a row in `results.csv`; R recalibrates.
 - **Headline numbers:** offline (Run protocol, 21 front-lit sessions) ~2.6 deg mean / 2.3 median; live hidden-dot accuracy 1.9-2.9 deg median; targets 58-100% hits (6 deg boxes 67-100%); moving the head costs ~2 deg (H4), a 9-dot recalibration recovers it (H5, +1.29 deg); smoothing lag50 ~31 / lag90 ~97 ms; pipeline 30 fps, frame -> screen ~12 ms; path-following lag ~250-270 ms end to end.
+- **Head movement, live (accuracy test):** at the calibration spot 2.1-3.1 deg; moved ~20 cm sideways without R 6.7-7.4 deg (mostly a consistent offset); after R there 4.0-4.9 deg (off-axis viewing degrades the eye features, so recalibration alone cannot fully fix large moves).
 - **Known issues:** predictions are compressed toward the centre (bottom reads ~3 deg too high live); de-squeezing hurts (it is the bias-variance trade-off), richer vertical features help a little (`gaze_blend_a100` +0.25 deg in the quick fit, exploratory, parked); accuracy varies ~1 deg run to run; the model does not adjust to head movement by itself (only R).
 - **Agreed next steps, in order:**
   1. **Head transform check (offline, small):** does MediaPipe's facial transformation matrix (3D head translation) track the real set-A / set-B head moves better than the eye-corner estimate that failed (`diagnose_positions.py`: measured head effect 5-10x too small)? If yes, the geometric gaze-ray route (parked) becomes viable again -> automatic head adjustment.
