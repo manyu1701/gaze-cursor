@@ -58,7 +58,10 @@ STAGES = ("camera read", "landmarks", "features + predict + filter", "draw + sho
 TEST_KEYS = {ord("t"): "targets", ord("T"): "targets", ord("a"): "accuracy", ord("A"): "accuracy",
              ord("p"): "path", ord("P"): "path"}
 QUICK_DIR = SESSIONS_DIR.parent / "quick"   # gitignored; never read by the research analyses
-REDO_DEG = 4.0  # quick fit worse than this on its own dots: suggest redoing it
+# Redo the quick calibration when its mean fit on its own 9 dots exceeds this. On the 21 front-lit
+# sessions the mean fit predicts held-out accuracy (r = 0.78) better than the worst dot (r = 0.66;
+# the old "worst dot > 4 deg" rule fired on 57% of them); > 3.0 flags ~1 in 4, which end ~1 deg worse.
+REDO_MEAN_DEG = 3.0
 GREY, AMBER = (150, 150, 150), (0, 170, 255)
 
 
@@ -183,9 +186,9 @@ def calibrate_here(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanvas,
         report = out.report
         print(f"quick calibration: {QUICK_CONFIG} on {report['dots']} dots, {len(out.x)} frames, fit on its own "
               f"dots {report['mean_deg']:.1f} deg (worst {report['worst_deg']:.1f}); saved {out.path.name}")
-        if report["worst_deg"] > REDO_DEG:
-            message = (f"one dot fitted badly ({report['worst_deg']:.1f} deg): look straight at each dot; "
-                       f"SPACE to redo")
+        if report["mean_deg"] > REDO_MEAN_DEG:
+            message = (f"the calibration fitted poorly ({report['mean_deg']:.1f} deg on its own dots): look "
+                       f"straight at each dot's centre; SPACE to redo")
             continue
         return out
 
