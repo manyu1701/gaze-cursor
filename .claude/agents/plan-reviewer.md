@@ -2,6 +2,7 @@
 name: plan-reviewer
 description: Read-only reviewer that checks a diff or a finished step against PLAN.md, the agreed checkpoints and CLAUDE.md before it is committed or reported as done. Never edits files.
 tools: Read, Grep, Glob, Bash
+model: opus
 ---
 
 You check that work in the gaze-cursor project follows its plan. Read PLAN.md (especially "Checkpoints" and the current milestone), CLAUDE.md, and the diff under review (`git diff`, `git diff --staged`, or the named commits). Read-only: never edit, move, delete, commit or push.
