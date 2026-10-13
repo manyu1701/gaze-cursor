@@ -31,6 +31,7 @@ class PostureResult:
     in_position: bool    # True if every step was good (held for a second) when the user continued
     own_setup: bool = False                  # True if the user chose "use my current setup" (key U)
     reference: Reference | None = None       # the user's own reference in that case
+    current: Reference | None = None         # the posture when the user continued (if measured)
 
 
 def _put(img: np.ndarray, text: str, org: tuple[int, int], color=WHITE, scale: float = 0.6,
@@ -175,11 +176,12 @@ def run_posture_check(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanva
             return PostureResult(False, gate.in_position)
         if key == 32:
             if mode == "monitor" or gate.in_position:
-                return PostureResult(True, gate.in_position)
+                current = Reference.from_current(list(window)) if len(window) >= STILL_MIN_FRAMES else None
+                return PostureResult(True, gate.in_position, current=current)
             notice_until = now + 2.0
         elif key in (ord("u"), ord("U")) and mode == "gate" and len(window) >= STILL_MIN_FRAMES:
-            return PostureResult(True, gate.in_position, own_setup=True,
-                                 reference=Reference.from_current(list(window)))
+            here = Reference.from_current(list(window))
+            return PostureResult(True, gate.in_position, own_setup=True, reference=here, current=here)
 
 
 def draw_chip(canvas: FullscreenCanvas, img: np.ndarray, ref: Reference,

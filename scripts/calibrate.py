@@ -200,8 +200,13 @@ def main() -> None:
                 return
             if check.own_setup:  # the user chose to calibrate in their current setup: nothing forced
                 ref = check.reference
+            elif guide is not None and check.current is not None:
+                # A set-B position is meant to differ from the usual one: "did you hold still" is
+                # judged against where the user was when they pressed SPACE.
+                ref = check.current
             rec.meta["posture_check"] = {
-                "mode": "own_setup" if check.own_setup else "earlier_sessions" if ref else "no_reference",
+                "mode": "own_setup" if check.own_setup else "slot_start" if guide is not None and check.current
+                        else "earlier_sessions" if ref else "no_reference",
                 "in_position": check.in_position, "reference_sessions": ref.n_sessions if ref else 0,
                 "reference": {m: ref.center[m] for m in ref.center} if ref else None}
         else:
