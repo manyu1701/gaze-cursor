@@ -60,9 +60,11 @@ Ordered by what the M1 data says matters most (see PROGRESS.md, "Independent ana
 
 **Done when:** a results table with CIs shows, on held-out targets *and* held-out sessions, which changes improved accuracy and by how much (the portfolio write-up starts here).
 
-**Status (end of 2026-10-13):** steps 1, 2, 2b, 3 and 6 done; step 4 partly; 5, 7-9 open. Remaining before M2 is closed: the results table (the head-transform check is done). Step 11 (follow the head, no input) is the main accuracy goal after that, via step 8 and the M3 bridge. Run now has the quick 9-dot calibration, One-Euro smoothing and live tests (T / A / P). See PROGRESS.md "Start here".
+**Status: M2 DONE (confirmed by Abhimanyu, 2026-10-13 evening; results in `RESULTS.md`).** Steps 1, 2, 2b, 3 and 6 done; step 4 partly; 5, 7-11 open and carried forward. Step 11 (follow the head, no input) is the main accuracy goal after that, via step 8 and the M3 bridge. Run now has the quick 9-dot calibration, One-Euro smoothing and live tests (T / A / P). See PROGRESS.md "Start here".
 
 ## M3: Control the real cursor
+
+**Decisions (Abhimanyu, 2026-10-13):** warp = **tap a hotkey** (default Right Option) and the cursor jumps to the gaze point once; the trackpad finishes. **Clicks stay on the trackpad** in the first pass; every click is logged as a labelled gaze sample and drives input-free self-recalibration. Dwell / blink clicking comes later as a measured experiment. Build order: quick-calibration refactor -> cursor + input platform module (listen-only event tap, Accessibility + Input Monitoring) -> click-through status overlay -> `Cursor.command` -> click log -> online RLS + drift (pre-registered before recording) -> head-and-eyes test H + Fitts task.
 
 - Cursor sink using Quartz CGEvent (Accessibility permission).
 - Click triggers: dwell, blink, and/or hotkey (compare).
