@@ -1,6 +1,7 @@
 """Live gaze dot. Fits a model from a recorded session, then draws where you're looking.
 
 Usage: uv run scripts/gaze_overlay.py [session.npz] [--model ridge|poly2] [--features gaze|eyes|iris|blend|both]   (q / ESC quits)
+       uv run scripts/gaze_overlay.py --pool   # all calibrations in the latest one's lighting (round-3 candidate)
 """
 
 from __future__ import annotations
@@ -14,9 +15,11 @@ import numpy as np
 from gaze_cursor.calibration import MODELS, GazeModel
 from gaze_cursor.capture import Camera
 from gaze_cursor.config import ScreenConfig
-from gaze_cursor.eval.session import CALIB, latest_session, load_session
+from gaze_cursor.eval.configs import REGISTRY
+from gaze_cursor.eval.session import CALIB, latest_session, load_session, session_files
 from gaze_cursor.features import FEATURE_SETS, assemble, extract_features
 from gaze_cursor.landmarks import FaceTracker
+from gaze_cursor.pool import POOL_CONFIG, pool_sessions
 from gaze_cursor.posture import Reference, posture_metrics
 from gaze_cursor.sinks.overlay import FullscreenCanvas
 from gaze_cursor.sinks.posture_view import draw_chip, run_posture_check
@@ -32,6 +35,9 @@ def main() -> None:
     ap.add_argument("--features", choices=FEATURE_SETS, default="gaze",
                     help="default 'gaze' (iris only): raw head pose made the dot slam to the screen "
                          "edge as soon as posture changed from calibration")
+    ap.add_argument("--pool", action="store_true",
+                    help=f"train {POOL_CONFIG} on every clean calibration recorded in the same lighting as "
+                         "the latest (or given) one, instead of that one alone (round-3 candidate; experimental)")
     ap.add_argument("--no-check", action="store_true",
                     help="skip the position check and the live posture hints")
     args = ap.parse_args()
@@ -40,13 +46,24 @@ def main() -> None:
     cfg = ScreenConfig.from_system()
     if (cfg.width_px, cfg.height_px) != (session.meta["screen"]["width_px"], session.meta["screen"]["height_px"]):
         print("warning: screen size differs from the session's; recalibrate for accurate results")
-    x_tr, y_tr, _ = session.select(CALIB, args.features)
-    model = GazeModel(args.model).fit(x_tr, y_tr)
+    if args.pool:
+        pool = pool_sessions([load_session(p) for p in session_files()], session)
+        pc = REGISTRY[POOL_CONFIG]
+        args.features = pc.feature_set
+        parts = [s.select_all(pc.feature_set) for s in pool]   # every target of every pooled session
+        x_tr, y_tr = np.concatenate([p[0] for p in parts]), np.concatenate([p[1] for p in parts])
+        model = pc.make_model(cfg).fit(x_tr, y_tr)
+        print(f"pooled {len(pool)} calibration(s) in '{(session.meta.get('lighting') or {}).get('label', 'unknown')}' "
+              f"lighting: {', '.join(s.path.stem.removeprefix('session_') for s in pool)}")
+    else:
+        pool = [session]
+        x_tr, y_tr, _ = session.select(CALIB, args.features)
+        model = GazeModel(args.model).fit(x_tr, y_tr)
     recent: deque[np.ndarray] = deque(maxlen=SMOOTH_FRAMES)
     mu, sd = x_tr.mean(axis=0), x_tr.std(axis=0) + 1e-9
     worst_z = 0.0
-    # The model is only as good as the posture it was trained in: compare against that session.
-    ref = None if args.no_check else Reference.from_sessions([session])
+    # The model is only as good as the postures it was trained in: compare against those sessions.
+    ref = None if args.no_check else Reference.from_sessions(pool)
 
     with Camera() as cam, FaceTracker() as tracker, FullscreenCanvas(cfg) as canvas:
         if ref is not None:
