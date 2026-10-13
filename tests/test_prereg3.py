@@ -171,9 +171,9 @@ def test_h4_detects_position_cost_and_not_a_null() -> None:
 def test_h5_detects_a_better_candidate_and_not_a_null() -> None:
     a = set_a(set_a_sessions())
     b = select_set_b(set_b_sessions(), freeze_after=FREEZE)
-    h5 = run_h5(a, b, REGISTRY["gaze_a10"], REGISTRY["ray_a1"], SCREEN)
+    h5 = run_h5(a, b, REGISTRY["gaze_a10"], REGISTRY["gaze_a10"], SCREEN, 9, "fresh")
     assert h5["supported"] and h5["err_cand"] < h5["err_ref"]
-    null = run_h5(a, b, REGISTRY["gaze_a10"], REGISTRY["gaze_a10"], SCREEN)
+    null = run_h5(a, b, REGISTRY["gaze_a10"], REGISTRY["gaze_a10"], SCREEN, 9, "none")
     assert not null["supported"] and null["comparison"]["mean_diff_deg"] == pytest.approx(0)
 
 

@@ -1,8 +1,9 @@
 """Pre-registered round 3 (PROGRESS.md): head position. Every threshold here is the written protocol.
 
 H4: the current approach (REF trained on the centre session only) loses accuracy when the head moves.
-H5: the frozen candidate, trained on all other calibrations, beats REF trained on the same data on a
-    held-out position.
+H5 (as amended before set B, PROGRESS.md): at a new position, a fresh recalibration on
+    PREREG3_DOTS quick dots beats REF trained on all other sessions (no dots), scored on the
+    position's other 25 - PREREG3_DOTS targets.
 
 Set A (development) is named explicitly below. Set B (confirmatory) is selected from sessions that
 start after the candidate is frozen: slot from the note (a label), confirmed by the measured position
@@ -43,9 +44,13 @@ SET_A = {
 
 # Frozen by the freeze commit (M2 step 3), BEFORE set B is recorded. None = not frozen yet: the
 # confirmatory run refuses, and no session can count as set B.
-PREREG3_CANDIDATE: str | None = None
-PREREG3_FREEZE_AFTER: str | None = None   # local time of the freeze commit, "YYYY-MM-DDTHH:MM:SS"
+PREREG3_CANDIDATE: str | None = "gaze_a10"
+PREREG3_FREEZE_AFTER: str | None = "2026-10-13T13:12:00"   # local time of the freeze commit
 PREREG3_REFERENCE = "gaze_a10"
+# Amendment (before set B): the candidate is a fresh fit on this many dots of the test session, chosen
+# by eval.correction.choose_dots from its calibration targets; REF gets no dots.
+PREREG3_DOTS = 9
+PREREG3_METHOD = "fresh"
 
 NEAR_MIN, FAR_MAX = 1.12, 0.90            # distance relative to C
 SHIFT_MIN = 0.07                          # |dx| for L / Rt, dy for Lo (fraction of the frame)
@@ -221,13 +226,19 @@ def run_h4(b: PositionSet, ref: Config, screen: ScreenConfig) -> dict:
             "criteria": crit, "supported": all(crit.values())}
 
 
-def run_h5(a: PositionSet, b: PositionSet, ref: Config, cand: Config, screen: ScreenConfig) -> dict:
-    """Leave-one-position-out on set B, training pool = all of set A + set B except the test session."""
+def run_h5(a: PositionSet, b: PositionSet, ref: Config, cand: Config, screen: ScreenConfig,
+           dots: int = PREREG3_DOTS, method: str = PREREG3_METHOD) -> dict:
+    """Amended H5 on set B. For each displaced session T: REF trained on all of set A + set B except T,
+    no dots; CAND = ``method`` with ``dots`` dots of T (``fresh``: fitted on those dots only). Both are
+    scored on T's other 25 - ``dots`` targets, paired by target."""
     b_order = ["C", *DISPLACED, "C2"]
     sessions = [b.sessions[k] for k in b_order] + [a.sessions[k] for k in SLOTS_A]
     test_idx = list(range(1, 1 + len(DISPLACED)))
-    r = concat(leave_one_position_out(sessions, test_idx, ref, screen))
-    c = concat(leave_one_position_out(sessions, test_idx, cand, screen))
+    c2 = len(DISPLACED) + 1
+    def pool(t: int) -> list[int]:
+        return [i for i in range(len(sessions)) if i != t]
+    r = concat([dot_strategy(sessions, ref, pool(t), t, screen, dots, "none") for t in test_idx])
+    c = concat([dot_strategy(sessions, cand, pool(t), t, screen, dots, method) for t in test_idx])
     comp = paired_comparison(r, c, N_BOOT, SEED)
     crit = {
         "(a) CI lower bound > 0": comp["ci_lo"] > 0,
@@ -235,13 +246,16 @@ def run_h5(a: PositionSet, b: PositionSet, ref: Config, cand: Config, screen: Sc
         f"(c) d > 0 in >= {H5_MIN_SESSIONS} of 5 test sessions": comp["sessions_new_better"] >= H5_MIN_SESSIONS,
     }
     # Reported, not criteria.
-    c_only = concat([fit_predict(sessions, ref, [0], t, screen) for t in test_idx])
-    vs_today = paired_comparison(c_only, c, N_BOOT, SEED)
-    cand_c2 = leave_one_position_out(sessions, [len(DISPLACED) + 1], cand, screen)[0]
+    c_only = concat([dot_strategy(sessions, ref, [0], t, screen, dots, "none") for t in test_idx])
+    refit = concat([dot_strategy(sessions, ref, pool(t), t, screen, dots, "refit") for t in test_idx])
+    own = concat([own_calibration(sessions, ref, t, screen) for t in test_idx])
+    cand_c2 = dot_strategy(sessions, cand, pool(c2), c2, screen, dots, method)
     return {"comparison": comp, "criteria": crit, "supported": all(crit.values()),
             "err_ref": float(r.err_deg.mean()), "err_cand": float(c.err_deg.mean()),
             "per_position": dict(zip(DISPLACED, comp["per_session_diff_deg"])),
-            "vs_c_only": vs_today, "cand_c2": float(cand_c2.err_deg.mean())}
+            "vs_c_only": paired_comparison(c_only, c, N_BOOT, SEED),
+            "vs_refit": paired_comparison(refit, c, N_BOOT, SEED),
+            "own_16": float(own.err_deg.mean()), "cand_c2": float(cand_c2.err_deg.mean())}
 
 
 def few_dot(sessions: Sequence[Session], config: Config, train: Sequence[int], test: int, screen: ScreenConfig,
