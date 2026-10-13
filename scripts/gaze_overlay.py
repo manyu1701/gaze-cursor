@@ -27,6 +27,7 @@ from gaze_cursor.capture import Camera
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.eval.session import CALIB, SESSIONS_DIR, SessionRecorder, latest_session, load_session
 from gaze_cursor.features import FEATURE_SETS, assemble, extract_features
+from gaze_cursor.filters import RUN_FILTER, make_filter
 from gaze_cursor.landmarks import FaceTracker
 from gaze_cursor.posture import LIGHT_MIN_FACE, Reference, lighting_label, lighting_stats, posture_metrics
 from gaze_cursor.quick import (
@@ -36,7 +37,7 @@ from gaze_cursor.sinks.overlay import FullscreenCanvas
 from gaze_cursor.sinks.posture_view import draw_chip, run_posture_check
 
 OOD_Z = 4.0  # warn when a live feature is this many calibration std-devs from its mean
-SMOOTH_FRAMES = 5  # simple moving average; One-Euro comes in M2
+STAGES = ("camera read", "landmarks", "features + predict + filter", "draw + show")
 QUICK_DIR = SESSIONS_DIR.parent / "quick"   # gitignored; never read by the research analyses
 REDO_DEG = 4.0  # quick fit worse than this on its own dots: suggest redoing it
 GREY, AMBER = (150, 150, 150), (0, 170, 255)
@@ -215,12 +216,17 @@ def main() -> None:
                 if not check.proceed:
                     return
         names = tuple(tracker.blendshape_names)
-        recent: deque[np.ndarray] = deque(maxlen=SMOOTH_FRAMES)
+        smooth = make_filter(RUN_FILTER)   # chosen in M2 step 6 (PROGRESS.md)
+        dot = None
         mu, sd = x_tr.mean(axis=0), x_tr.std(axis=0) + 1e-9
         worst_z = 0.0
+        timing: list[list[float]] = []   # per frame: monotonic ms at the 5 stage boundaries
         while True:
+            t0 = time.monotonic() * 1000
             frame = cam.read()
+            t1 = time.monotonic() * 1000
             result = tracker.process(frame) if frame is not None else None
+            t2 = time.monotonic() * 1000
             metrics = None
             if frame is not None and result is not None:
                 h, w = frame.image.shape[:2]
@@ -228,12 +234,12 @@ def main() -> None:
                 feats = extract_features(result.points, result.transform, (w, h))
                 if feats is not None:
                     x = assemble(feats, result.blendshapes, names, features)
-                    recent.append(model.predict(x)[0])
+                    dot = smooth.update(frame.timestamp_ms, model.predict(x)[0])
                     worst_z = float(np.max(np.abs((x - mu) / sd)))
+            t3 = time.monotonic() * 1000
             img = canvas.blank()
-            if recent:
-                gx, gy = np.mean(recent, axis=0)
-                canvas.dot(img, (np.clip(gx, 0, cfg.width_px), np.clip(gy, 0, cfg.height_px)),
+            if dot is not None:
+                canvas.dot(img, (np.clip(dot[0], 0, cfg.width_px), np.clip(dot[1], 0, cfg.height_px)),
                            color=(0, 255, 0), r=20)
             if ref is not None:
                 draw_chip(canvas, img, ref, metrics)
@@ -242,6 +248,7 @@ def main() -> None:
                 canvas.text(img, f"input is {worst_z:.0f} sd from calibration: press R to recalibrate here",
                             y=canvas.size[1] - 70)
             key = canvas.show(img)
+            timing.append([t0, t1, t2, t3, time.monotonic() * 1000])
             if key in (27, ord("q")):
                 break
             if key in (ord("r"), ord("R")):
@@ -252,8 +259,30 @@ def main() -> None:
                     model, x_tr = out.model, out.x
                     features, ref = "gaze", Reference.from_current(out.posture)
                     mu, sd = x_tr.mean(axis=0), x_tr.std(axis=0) + 1e-9
-                    recent.clear(); worst_z = 0.0
+                    smooth.reset(); dot = None; worst_z = 0.0
+                timing.append([np.nan] * 5)   # the recalibration is not part of the live loop
+    report_latency(np.array(timing))
 
+
+def report_latency(t: np.ndarray) -> None:
+    """Print fps and per-stage times of the live loop, and save them to data/quick/ (record and replay).
+    Software only: the camera's own sensor-to-read delay is not measurable here."""
+    t = t[~np.isnan(t).any(axis=1)] if len(t) else t
+    if len(t) < 10:
+        return
+    stages = np.diff(t, axis=1)
+    loop = np.diff(t[:, 0])
+    loop = loop[loop < 1000]
+    print(f"live loop: {len(t)} frames, {1000 / np.median(loop):.1f} fps (median frame interval {np.median(loop):.1f} ms)")
+    for name, col in zip(STAGES, stages.T):
+        print(f"  {name:28s} median {np.median(col):6.1f} ms   p95 {np.percentile(col, 95):6.1f} ms")
+    shown = t[:, 4] - t[:, 1]
+    print(f"  {'read -> shown':28s} median {np.median(shown):6.1f} ms   p95 {np.percentile(shown, 95):6.1f} ms"
+          "   (plus the camera's own delay, not measurable in software)")
+    QUICK_DIR.mkdir(parents=True, exist_ok=True)
+    path = QUICK_DIR / f"timing_{time.strftime('%Y%m%d_%H%M%S')}.npz"
+    np.savez_compressed(path, stage_ms=t, stages=np.array(("start",) + STAGES), filter=str(RUN_FILTER))
+    print(f"  saved {path.name}")
 
 if __name__ == "__main__":
     main()

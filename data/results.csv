@@ -106,3 +106,6 @@ time,mode,confirmatory,config,session,model,features_set,alpha,n_sessions,n_targ
 2026-10-13T14:31:48,compression_explore,0,edge: eyes a100,,,,,21,273,,,,,,,,3.1111,2.7372,5.1537,,,2.8886,3.3509,"gain x 0.82, gain y 0.66; top dy +1.79, bottom dy -1.58"
 2026-10-13T14:31:48,compression_explore,0,edge: gaze_blend a100 (+ blendshapes),,,,,21,273,,,,,,,,2.5012,2.2013,4.2732,,,2.3269,2.6861,"gain x 0.92, gain y 0.82; top dy +1.18, bottom dy -0.79"
 2026-10-13T14:31:48,compression_explore,0,edge: gaze_blend a1000,,,,,21,273,,,,,,,,4.0058,3.8804,6.3981,,,3.7924,4.2249,"gain x 0.60, gain y 0.55; top dy +2.72, bottom dy -2.47"
+2026-10-13T14:47:33,smoothing_heldout,0,raw,,,,,9,144,,,,,,,,2.5659,,,,0.9139,0.6679,1.2704,"lag50 0 ms, lag90 0 ms, reached90 1.00, overshoot 0.46 deg; CI is on jitter"
+2026-10-13T14:47:33,smoothing_heldout,0,moving average n=5 (today),,,,,9,144,,,,,,,,2.5129,,,,0.8301,0.6187,1.1228,"lag50 61 ms, lag90 125 ms, reached90 1.00, overshoot 0.39 deg; CI is on jitter"
+2026-10-13T14:47:33,smoothing_heldout,0,one-euro mc=0.05 b=0.001 (chosen),,,,,9,144,,,,,,,,2.5021,,,,0.7749,0.5377,1.1160,"lag50 31 ms, lag90 97 ms, reached90 1.00, overshoot 0.23 deg; CI is on jitter"
