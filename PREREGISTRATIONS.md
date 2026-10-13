@@ -233,3 +233,24 @@ Every confirmatory test in this project was written down and committed to git **
 - **Round-4 session 2 (file 1 of the test set):** `cursor_20261013_234559` (started 23:45 on 2026-10-13, ran past midnight): **COUNTS** by the frozen data rule: 67.3 min awake (>= 5), 321 labelled clicks, 269 usable (>= 20), 0 segments excluded, face tracked 94%, 74 jumps (0 refused), 3 quick calibrations (fits on own dots 1.9, 2.5, 2.9 deg). Checked with `--status` only; no model fitted, no frozen-vs-learning comparison computed. Still needed: 2 more qualifying sessions (1 of 3 so far).
 - **Round-4 session 3 (file 2 of the test set):** `cursor_20261014_011059` (started 01:10 on 2026-10-14): **COUNTS** by the frozen data rule: 10.0 min awake (>= 5), 27 labelled clicks, 23 usable (>= 20), 0 segments excluded, face tracked 98.8%, 21 jumps (0 refused), 1 quick calibration. Checked with `--status` and an integrity load only; no model fitted, no frozen-vs-learning comparison computed. Still needed: 1 more qualifying session (2 of 3 so far).
 - **Round-4 session 4 (file 3 of the test set):** `cursor_20261014_012229` (started 01:22 on 2026-10-14): **COUNTS** by the frozen data rule: 13.3 min awake (>= 5), 43 labelled clicks, 40 usable (>= 20), 0 segments excluded, face tracked 98.4%, 22 jumps (0 refused), 1 quick calibration. Checked with `--status` and an integrity load only; no model fitted, no frozen-vs-learning comparison computed. **The data rule is now met: 3 of 3 qualifying sessions** (the 3 files the frozen rule picks are `cursor_20261013_234559`, `cursor_20261014_011059`, `cursor_20261014_012229`); the H6 test has not been run yet.
+
+### RESULT, round 4 (H6, click learning), run once on 2026-10-14
+
+Run: `uv run scripts/evaluate_online.py --preregistered` on the first 3 qualifying sessions, code frozen at 131a326. Logged to `data/results.csv` with `confirmatory=1` (the row's `err_deg_mean` holds d = err(frozen) - err(learning), not an absolute error).
+
+| session | min | clicks labelled / evaluated / learned from | frozen mean (median) deg | learning mean (median) deg | d (deg) | drift alarms | light face / background |
+|---|---|---|---|---|---|---|---|
+| cursor_20261013_234559 | 67.3 | 321 / 269 / 195 | 5.33 (5.24) | 4.53 (4.17) | +0.80 | 136 | 82 / 160 |
+| cursor_20261014_011059 | 10.0 | 27 / 23 / 17 | 4.19 (4.24) | 4.25 (3.76) | -0.07 | 9 | 86 / 171 |
+| cursor_20261014_012229 | 13.3 | 43 / 40 / 33 | 4.23 (4.02) | 4.22 (3.86) | +0.01 | 17 | 85 / 172 |
+
+Pooled mean d = +0.64 deg over 332 clicks, click-level bootstrap 95% CI [+0.44, +0.85] (the pre-registered criterion CI). (a) CI lower bound > 0: PASS. (b) mean >= 0.5 deg: PASS. (c) d > 0 in >= 2 of 3 sessions: PASS (+0.80, +0.01). **Verdict by the frozen rule: H6 SUPPORTED. No re-tuning on these sessions.**
+
+Reported alongside, and caveats (the verdict is not changed by any of them):
+- The pooled mean is click-weighted: the 67-minute session supplies 81% of the evaluated clicks and essentially all of the gain. *Post hoc, descriptive:* the equal-weight mean of the three session means is about +0.25 deg, below the 0.5 threshold.
+- Criterion (c) passes literally, but one of its two sessions is +0.01 deg, which is no change. In substance one session improved and two showed no difference.
+- The two-level CI (sessions, then clicks) is [-0.15, +0.88] and includes 0: cross-session evidence with 3 sessions is not conclusive. The click-level CI treats clicks as independent and is optimistic.
+- *Post hoc:* the only session with a gain is the longest, where the learner had the most clicks and the frozen model the most time to drift (frozen median 5.2 vs 4.0-4.2 deg). The effect may be "learning helps over long sessions" rather than general.
+- Absolute errors against click labels are 4.2-5.3 deg (frozen) and 4.2-4.5 deg (learning); the gain is small next to that.
+- Standard caveats from the protocol: one person, one room, one camera, clicks as an imperfect label, the 10 deg evaluation gate is a judgement call.
+- Consequence per the protocol: Cursor mode learns from clicks by default, with low confidence given the points above.
