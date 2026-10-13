@@ -20,7 +20,8 @@ import numpy as np
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.eval.configs import Config
 from gaze_cursor.eval.prereg2 import lighting_class
-from gaze_cursor.eval.session import Session
+from gaze_cursor.eval.correction import apply_correction, choose_dots, fit_correction
+from gaze_cursor.eval.session import CALIB, TEST, Session
 from gaze_cursor.eval.splits import build_dataset
 from gaze_cursor.eval.stats import (
     TargetStats, bootstrap_diff_ci, concat, paired_comparison, per_target)
@@ -241,3 +242,36 @@ def run_h5(a: PositionSet, b: PositionSet, ref: Config, cand: Config, screen: Sc
             "err_ref": float(r.err_deg.mean()), "err_cand": float(c.err_deg.mean()),
             "per_position": dict(zip(DISPLACED, comp["per_session_diff_deg"])),
             "vs_c_only": vs_today, "cand_c2": float(cand_c2.err_deg.mean())}
+
+
+def few_dot(sessions: Sequence[Session], config: Config, train: Sequence[int], test: int, screen: ScreenConfig,
+            k: int, kind: str = "offset") -> TargetStats:
+    """EXPLORATORY: a model trained on ``train`` sessions, corrected with ``k`` dots of session ``test``.
+
+    The dots are k of the test session's calibration targets (centre first, then spread out); the
+    error is on its held-out targets only, so the dots are never scored. k = 0: no correction."""
+    ds = build_dataset(sessions, config.feature_set)
+    tr = np.flatnonzero(np.isin(ds.session, list(train)))
+    model = config.make_model(screen).fit(ds.x[tr], ds.y[tr])
+    in_s = ds.session == test
+    te = np.flatnonzero(in_s & (ds.phase == TEST))
+    pred = model.predict(ds.x[te])
+    if k:
+        cal = np.flatnonzero(in_s & (ds.phase == CALIB))
+        keys = np.unique(ds.target[cal])
+        xy = np.array([ds.y[cal][ds.target[cal] == t][0] for t in keys])
+        dots = keys[choose_dots(xy, k, (screen.width_px / 2, screen.height_px / 2))]
+        p_cal = model.predict(ds.x[cal])
+        mean_pred = np.array([p_cal[ds.target[cal] == t].mean(axis=0) for t in dots])
+        truth = np.array([ds.y[cal][ds.target[cal] == t][0] for t in dots])
+        pred = apply_correction(pred, fit_correction(mean_pred, truth, kind))
+    return per_target(pred, ds.y[te], ds.target[te], ds.session[te], screen)
+
+
+def own_calibration(sessions: Sequence[Session], config: Config, test: int, screen: ScreenConfig) -> TargetStats:
+    """The session's own 16 calibration targets -> its held-out targets (the ceiling)."""
+    ds = build_dataset(sessions, config.feature_set)
+    in_s = ds.session == test
+    tr, te = np.flatnonzero(in_s & (ds.phase == CALIB)), np.flatnonzero(in_s & (ds.phase == TEST))
+    model = config.make_model(screen).fit(ds.x[tr], ds.y[tr])
+    return per_target(model.predict(ds.x[te]), ds.y[te], ds.target[te], ds.session[te], screen)

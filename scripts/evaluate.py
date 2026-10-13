@@ -317,11 +317,45 @@ def run_positions(args: argparse.Namespace) -> int:
     if args.per_target:
         best = min(configs, key=lambda c: concat(res[c.name]).err_deg.mean())
         print_per_target(best, "positions_A", concat(res[best.name]), tuple(s.path.name for s in sessions))
+    few_dot_table(sessions, screen, args)
     print("\nEXPLORATORY: set A is development data. Choose and freeze ONE candidate before recording set B.")
     if args.log:
         append_rows(rows)
         print(f"logged {len(rows)} rows to data/results.csv (confirmatory=0)")
     return 0
+
+
+FEW_DOT = [("no correction", 0, "offset"), ("+ 1 dot (offset)", 1, "offset"), ("+ 3 dots (offset)", 3, "offset"),
+           ("+ 5 dots (affine)", 5, "affine")]
+
+
+def few_dot_table(sessions, screen, args) -> None:
+    """EXPLORATORY: pooled (other 5) or C-only model + k quick dots of the new session, scored on
+    each session's 9 held-out targets; own 16-dot calibration as the ceiling. Paired on targets."""
+    print("\n" + "on each session's 9 held-out targets".ljust(44) + "".join(f"{k:>7s}" for k in SLOTS_A)
+          + f"{'all':>7s}  95% CI")
+    idx = range(len(SLOTS_A))
+    out = {}
+    def show(label, parts):
+        allv = concat(parts)
+        lo, hi = bootstrap_ci(allv.err_deg, args.n_boot, args.seed)
+        print(f"{label:44s}" + "".join(f"{p.err_deg.mean():7.2f}" for p in parts)
+              + f"{allv.err_deg.mean():7.2f}  [{lo:.2f}, {hi:.2f}]")
+        out[label] = allv
+    for name in ("gaze_a100",):
+        cfg = REGISTRY[name]
+        for label, k, kind in FEW_DOT:
+            show(f"{name} pooled {label}", [prereg3.few_dot(sessions, cfg, [j for j in idx if j != t], t, screen, k, kind)
+                                            for t in idx])
+    ref = REGISTRY[PREREG3_REFERENCE]
+    for label, k, kind in FEW_DOT[:2]:   # today's Run; on C itself it is C's own calibration (no leak)
+        show(f"{ref.name} C only {label}", [prereg3.own_calibration(sessions, ref, 0, screen)]
+             + [prereg3.few_dot(sessions, ref, [0], t, screen, k, kind) for t in idx[1:]])
+    show(f"{ref.name} own 16-dot calibration", [prereg3.own_calibration(sessions, ref, t, screen) for t in idx])
+    base = out["gaze_a100 pooled no correction"]
+    for label, k, kind in FEW_DOT[1:]:
+        print_comparison("pooled", f"pooled {label}", "positions_A, 9 held-out targets",
+                         paired_comparison(base, out[f"gaze_a100 pooled {label}"], args.n_boot, args.seed))
 
 
 def run_preregistered_3(args: argparse.Namespace) -> int:

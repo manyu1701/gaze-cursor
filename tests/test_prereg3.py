@@ -196,3 +196,28 @@ def test_geo_model_needs_the_screen() -> None:
     from gaze_cursor.calibration import GazeModel
     with pytest.raises(ValueError):
         GazeModel("geo")
+
+
+def test_few_dot_correction_math_and_dot_choice() -> None:
+    from gaze_cursor.eval.correction import apply_correction, choose_dots, fit_correction
+    xy = np.array([[0, 0], [100, 0], [0, 100], [50, 50], [100, 100]], float)
+    d = choose_dots(xy, 3, (50, 50))
+    assert d[0] == 3 and len(set(d.tolist())) == 3
+    truth = xy * 1.1 + [5, -7]
+    m = fit_correction(xy, truth, "affine")
+    assert apply_correction(xy, m) == pytest.approx(truth)
+    off = apply_correction(xy, fit_correction(xy[:1], xy[:1] + [3, 4], "offset"))
+    assert off == pytest.approx(xy + [3, 4])
+    with pytest.raises(ValueError):
+        fit_correction(xy[:2], truth[:2], "affine")
+
+
+def test_few_dots_remove_a_per_session_offset() -> None:
+    from dataclasses import replace
+    from gaze_cursor.eval.prereg3 import few_dot
+    a = set_a_sessions()
+    a[3] = replace(a[3], target_xy=a[3].target_xy + np.float32([40, -30]))  # planted session offset
+    cfg = REGISTRY["ray_a1"]
+    none = few_dot(a, cfg, [0, 1, 2, 4, 5], 3, SCREEN, 0).err_deg.mean()
+    one = few_dot(a, cfg, [0, 1, 2, 4, 5], 3, SCREEN, 1).err_deg.mean()
+    assert one < 0.5 < none
