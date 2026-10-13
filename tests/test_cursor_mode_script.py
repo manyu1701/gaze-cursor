@@ -1,4 +1,4 @@
-"""Drive scripts/gaze_cursor.py end to end with stand-ins for the camera, tracker, overlay and cursor."""
+"""Drive scripts/cursor_mode.py end to end with stand-ins for the camera, tracker, overlay and cursor."""
 
 import importlib.util
 import json
@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("gaze_cursor_script", ROOT / "scripts" / "gaze_cursor.py")
+    spec = importlib.util.spec_from_file_location("cursor_mode_script", ROOT / "scripts" / "cursor_mode.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -86,7 +86,7 @@ def test_cursor_mode_warps_on_the_hotkey_logs_clicks_and_quits(tmp_path, monkeyp
     center = gc.posture_metrics(result.points, result.transform, (1280, 720))     # head never moves
     monkeypatch.setattr(gc.Reference, "from_current", classmethod(lambda cls, p: SimpleNamespace(center=center)))
     monkeypatch.setattr(gc.time, "monotonic_ns", lambda: t["ms"] * 1_000_000)
-    monkeypatch.setattr(sys, "argv", ["gaze_cursor.py"])
+    monkeypatch.setattr(sys, "argv", ["cursor_mode.py"])
 
     assert gc.main() == 0
     assert len(warps) == 1 and np.allclose(warps[0], (700, 450), atol=1)   # second warp: toggled off
@@ -102,5 +102,5 @@ def test_cursor_mode_explains_the_permission_when_missing(monkeypatch, capsys) -
     gc = _load()
     monkeypatch.setattr(gc, "input_monitoring_granted", lambda: False)
     monkeypatch.setattr(gc, "request_input_monitoring", lambda: None)
-    monkeypatch.setattr(sys, "argv", ["gaze_cursor.py"])
+    monkeypatch.setattr(sys, "argv", ["cursor_mode.py"])
     assert gc.main() == 1 and "Input Monitoring" in capsys.readouterr().out

@@ -1,4 +1,4 @@
-"""The 9-dot quick calibration screens, shared by Run (gaze_overlay.py) and Cursor (gaze_cursor.py).
+"""The 9-dot quick calibration screens, shared by Run (gaze_overlay.py) and Cursor (cursor_mode.py).
 
 Shows a start screen (face tracked? lit?), then the quick dots on a fullscreen canvas, records them to
 data/quick/ (record and replay) and fits the frozen round-3 winner (``quick.QUICK_CONFIG``).

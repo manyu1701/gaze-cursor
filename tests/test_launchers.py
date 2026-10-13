@@ -55,4 +55,4 @@ def test_two_canvases_can_be_opened_one_after_the_other_in_one_process() -> None
 
 
 def test_cursor_launcher_starts_cursor_mode() -> None:
-    assert "scripts/gaze_cursor.py" in (ROOT / "Cursor.command").read_text()
+    assert "scripts/cursor_mode.py" in (ROOT / "Cursor.command").read_text()

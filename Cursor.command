@@ -10,7 +10,7 @@ if ! command -v uv >/dev/null 2>&1; then
   read -r -p "Press Enter to close" _; exit 1
 fi
 echo "gaze-cursor: Cursor mode (tap Right Option to jump; Ctrl+Option+Q quits)"
-uv run scripts/gaze_cursor.py "$@"
+uv run scripts/cursor_mode.py "$@"
 status=$?
 echo
 if [ $status -ne 0 ]; then echo "Stopped (exit code $status)."; fi

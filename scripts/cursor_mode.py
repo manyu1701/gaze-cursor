@@ -11,7 +11,7 @@ Every frame (gaze, head shift) and every hotkey / click is saved to data/quick/c
 (positions only, no images) and summarised in data/results.csv, so self-recalibration from clicks can be
 built and judged offline. Needs Input Monitoring permission for Terminal (it explains how).
 
-  uv run scripts/gaze_cursor.py [--show-dot]
+  uv run scripts/cursor_mode.py [--show-dot]
 """
 
 from __future__ import annotations
