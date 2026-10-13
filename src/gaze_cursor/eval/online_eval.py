@@ -84,7 +84,12 @@ def segments(meta: dict, events: np.ndarray, frames: np.ndarray, quick_dir: Path
         return [(-np.inf, last)]
     first = quick_dir / f"session_{meta['started']}.npz"
     out = [(-np.inf, first)] if first.exists() and first != last else []
-    return out + [(float(recal[-1]), last)]
+    # The new calibration is active from the first frame after the recalibration gap (no frames are
+    # logged while the dots are shown); the frame around the key press itself still used the old model.
+    t = frames[:, 0]
+    after = np.flatnonzero((t > recal[-1]) & (np.diff(t, prepend=t[0]) > 2000))
+    start = float(t[after[0]]) if len(after) else float(recal[-1])
+    return out + [(start, last)]
 
 
 def replay(path: Path, quick_dir: Path) -> SessionReplay:

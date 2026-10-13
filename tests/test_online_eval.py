@@ -1,6 +1,7 @@
 """Round-4 replay and decision on synthetic Cursor sessions (no camera)."""
 
 import json
+from pathlib import Path
 
 import numpy as np
 
@@ -78,3 +79,12 @@ def test_the_log_records_which_calibration_ran_when(tmp_path) -> None:
     s.frame(5000.0, None, None)
     meta = json.loads(str(np.load(s.save(tmp_path))["meta"]))
     assert meta["calibrations"] == [[100.0, "session_a.npz"], [5000.0, "session_b.npz"]]
+
+
+def test_old_logs_start_the_new_calibration_after_the_recalibration_gap() -> None:
+    frames = np.zeros((6, 15))
+    frames[:, 0] = [0, 33, 66, 99, 20000, 20033]        # recalibration at 80 ms, dots shown until ~20 s
+    events = np.array([[80.0, 4, np.nan, np.nan, 0, 0, 1]])
+    meta = {"calibration": "session_new.npz", "started": "20261013_203902"}
+    segs = oe.segments(meta, events, frames, Path("/nonexistent"))
+    assert segs[-1] == (20000.0, Path("/nonexistent/session_new.npz"))
