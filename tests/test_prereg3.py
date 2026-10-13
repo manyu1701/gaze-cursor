@@ -221,3 +221,19 @@ def test_few_dots_remove_a_per_session_offset() -> None:
     none = few_dot(a, cfg, [0, 1, 2, 4, 5], 3, SCREEN, 0).err_deg.mean()
     one = few_dot(a, cfg, [0, 1, 2, 4, 5], 3, SCREEN, 1).err_deg.mean()
     assert one < 0.5 < none
+
+
+def test_dot_strategy_scores_the_same_non_dot_targets_and_fixes_an_offset() -> None:
+    from dataclasses import replace
+    from gaze_cursor.eval.prereg3 import DOT_METHODS, dot_strategy
+    a = set_a_sessions()
+    a[3] = replace(a[3], target_xy=a[3].target_xy + np.float32([40, -30]))  # planted session offset
+    cfg = REGISTRY["ray_a1"]
+    res = {m: dot_strategy(a, cfg, [0, 1, 2, 4, 5], 3, SCREEN, 5, m) for m in DOT_METHODS}
+    for m in DOT_METHODS:
+        assert np.array_equal(res[m].target, res["none"].target)
+    assert len(res["none"].target) == len(np.unique(a[3].target_idx)) - 5
+    assert res["offset"].err_deg.mean() < 0.5 < res["none"].err_deg.mean()
+    assert res["fresh"].err_deg.mean() < res["none"].err_deg.mean()
+    with pytest.raises(ValueError):
+        dot_strategy(a, cfg, [0], 3, SCREEN, 5, "nope")

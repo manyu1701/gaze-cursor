@@ -275,3 +275,43 @@ def own_calibration(sessions: Sequence[Session], config: Config, test: int, scre
     tr, te = np.flatnonzero(in_s & (ds.phase == CALIB)), np.flatnonzero(in_s & (ds.phase == TEST))
     model = config.make_model(screen).fit(ds.x[tr], ds.y[tr])
     return per_target(model.predict(ds.x[te]), ds.y[te], ds.target[te], ds.session[te], screen)
+
+
+DOT_METHODS = ("none", "offset", "affine", "fresh", "refit")
+
+
+def dot_strategy(sessions: Sequence[Session], config: Config, train: Sequence[int], test: int,
+                 screen: ScreenConfig, k: int, method: str) -> TargetStats:
+    """EXPLORATORY: what a user sitting down at a new position gets after looking at ``k`` quick dots.
+
+    The dots are k of the test session's calibration targets (centre first, then spread out). The
+    error is on ALL its other targets (25 - k), so every method at the same k is scored on the same
+    targets and can be paired. Methods: ``none`` (the pooled model unchanged), ``offset`` / ``affine``
+    (a correction fitted on the dots), ``fresh`` (a new model on the dots only, no earlier sessions),
+    ``refit`` (the pooled model refitted with the dots added, weighted to half of the data)."""
+    if method not in DOT_METHODS:
+        raise ValueError(f"unknown method {method!r}; choose from {DOT_METHODS}")
+    ds = build_dataset(sessions, config.feature_set)
+    in_s = ds.session == test
+    cal = np.flatnonzero(in_s & (ds.phase == CALIB))
+    keys = np.unique(ds.target[cal])
+    xy = np.array([ds.y[cal][ds.target[cal] == t][0] for t in keys])
+    dots = keys[choose_dots(xy, k, (screen.width_px / 2, screen.height_px / 2))]
+    dot_rows = np.flatnonzero(in_s & np.isin(ds.target, dots))
+    te = np.flatnonzero(in_s & ~np.isin(ds.target, dots))
+    tr = np.flatnonzero(np.isin(ds.session, list(train)))
+    if method == "fresh":
+        model = config.make_model(screen).fit(ds.x[dot_rows], ds.y[dot_rows])
+    elif method == "refit":
+        rep = max(1, round(len(tr) / len(dot_rows)))
+        rows = np.concatenate([tr, np.tile(dot_rows, rep)])
+        model = config.make_model(screen).fit(ds.x[rows], ds.y[rows])
+    else:
+        model = config.make_model(screen).fit(ds.x[tr], ds.y[tr])
+    pred = model.predict(ds.x[te])
+    if method in ("offset", "affine"):
+        p_dot = model.predict(ds.x[dot_rows])
+        mean_pred = np.array([p_dot[ds.target[dot_rows] == t].mean(axis=0) for t in dots])
+        truth = np.array([ds.y[dot_rows][ds.target[dot_rows] == t][0] for t in dots])
+        pred = apply_correction(pred, fit_correction(mean_pred, truth, method))
+    return per_target(pred, ds.y[te], ds.target[te], ds.session[te], screen)

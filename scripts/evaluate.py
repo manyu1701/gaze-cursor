@@ -318,6 +318,8 @@ def run_positions(args: argparse.Namespace) -> int:
         best = min(configs, key=lambda c: concat(res[c.name]).err_deg.mean())
         print_per_target(best, "positions_A", concat(res[best.name]), tuple(s.path.name for s in sessions))
     few_dot_table(sessions, screen, args)
+    if args.dots:
+        dot_sweep(sessions, screen, args)
     print("\nEXPLORATORY: set A is development data. Choose and freeze ONE candidate before recording set B.")
     if args.log:
         append_rows(rows)
@@ -356,6 +358,39 @@ def few_dot_table(sessions, screen, args) -> None:
     for label, k, kind in FEW_DOT[1:]:
         print_comparison("pooled", f"pooled {label}", "positions_A, 9 held-out targets",
                          paired_comparison(base, out[f"gaze_a100 pooled {label}"], args.n_boot, args.seed))
+
+
+DOT_KS = (3, 5, 7, 9)
+
+
+def dot_sweep(sessions, screen, args) -> None:
+    """EXPLORATORY: k quick dots at a new position, k in DOT_KS, scored on all 25 - k other targets
+    of each held-out set-A session (identical targets per k, so methods pair). The pooled model
+    trains on the other 5 sessions; ``fresh`` uses the k dots alone (is the pool worth anything?)."""
+    idx = range(len(SLOTS_A))
+    cfg = REGISTRY["gaze_a100"]
+    ref = REGISTRY[PREREG3_REFERENCE]
+    for k in DOT_KS:
+        print(f"\n{k} dots; scored on the other {25 - k} targets".ljust(48) + "".join(f"{s:>7s}" for s in SLOTS_A)
+              + f"{'all':>7s}  95% CI")
+        out = {}
+        variants = [(f"{ref.name} pooled, no dots", ref, "none"), (f"{cfg.name} pooled, no dots", cfg, "none")]
+        variants += [(f"{cfg.name} pooled + {m}", cfg, m) for m in ("offset", "affine", "refit")]
+        variants += [(f"{c.name} fresh on {k} dots only", c, "fresh") for c in (ref, cfg)]
+        for label, c, m in variants:
+            if m == "affine" and k < 3:
+                continue
+            parts = [prereg3.dot_strategy(sessions, c, [j for j in idx if j != t], t, screen, k, m) for t in idx]
+            allv = concat(parts)
+            lo, hi = bootstrap_ci(allv.err_deg, args.n_boot, args.seed)
+            print(f"{label:47s}" + "".join(f"{p.err_deg.mean():7.2f}" for p in parts)
+                  + f"{allv.err_deg.mean():7.2f}  [{lo:.2f}, {hi:.2f}]")
+            out[label] = allv
+        base = out[f"{ref.name} pooled, no dots"]
+        best = min((l for l in out if "pooled +" in l), key=lambda l: out[l].err_deg.mean())
+        fresh = min((l for l in out if "fresh" in l), key=lambda l: out[l].err_deg.mean())
+        for a, b in ((f"{ref.name} pooled, no dots", best), (fresh, best)):
+            print_comparison(a, b, f"positions_A, {k} dots", paired_comparison(out[a], out[b], args.n_boot, args.seed))
 
 
 def run_preregistered_3(args: argparse.Namespace) -> int:
@@ -423,6 +458,8 @@ def main() -> int:
                     help="run the pre-registered round-2 tests (H2, H3)")
     ap.add_argument("--positions", action="store_true",
                     help="M2 step 3 development: leave-one-position-out on set A (exploratory)")
+    ap.add_argument("--dots", action="store_true",
+                    help="with --positions: sweep 3/5/7/9 quick dots, scored on all other targets")
     ap.add_argument("--preregistered-3", dest="preregistered_3", action="store_true",
                     help="run the pre-registered round-3 tests (H4, H5); refuses until frozen")
     ap.add_argument("--n-boot", type=int, default=10_000)
