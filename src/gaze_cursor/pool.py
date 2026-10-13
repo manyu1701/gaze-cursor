@@ -1,6 +1,6 @@
 """Which recorded calibrations to pool for the live model. Pure functions.
 
-Round 2 (PROGRESS.md) showed that a calibration from other lighting costs ~2.4 deg, so the pool is
+Round 2 (PREREGISTRATIONS.md) showed that a calibration from other lighting costs ~2.4 deg, so the pool is
 restricted to sessions recorded in the same captured lighting label as the anchor (the latest
 calibration). Round 3 set A suggested that pooling positions helps; the default switches only if
 the pre-registered round-3 test (H5) supports it.

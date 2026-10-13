@@ -6,7 +6,7 @@
 - A **listen-only** Quartz event tap reports the hotkeys and every mouse-down without blocking or
   changing any event. It needs **Input Monitoring** permission for the app running Python (Terminal).
 
-Hotkeys (defaults): tap **Right Command** alone = warp to gaze (Abhimanyu's choice after the first live
+Hotkeys (defaults): tap **Right Command** alone = warp to gaze (the author's choice after the first live
 try; Right Option before); Cmd+Option+G = on / off;
 Cmd+Option+R = recalibrate (9 quick dots); Cmd+Option+Q = quit.
 """
@@ -71,7 +71,7 @@ class HotkeyDetector:
 
     def key_down(self, keycode: int, flags: int, t_ms: float) -> list[InputEvent]:
         self._down_at = None                                   # the modifier was used with a key
-        if flags & FLAG_COMMAND and flags & FLAG_OPTION:   # Cmd+Option+G / R / Q (Abhimanyu)
+        if flags & FLAG_COMMAND and flags & FLAG_OPTION:   # Cmd+Option+G / R / Q (the author)
             if keycode == KEY_G:
                 return [InputEvent("toggle", t_ms)]
             if keycode == KEY_Q:

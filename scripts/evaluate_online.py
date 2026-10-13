@@ -1,4 +1,4 @@
-"""Round 4: does learning from your clicks beat the frozen quick calibration? (PROGRESS.md, "Round 4")
+"""Round 4: does learning from your clicks beat the frozen quick calibration? (PREREGISTRATIONS.md, "Round 4")
 
   uv run scripts/evaluate_online.py --develop [cursor_*.npz ...]   # exploratory replay (default: all logs)
   uv run scripts/evaluate_online.py --preregistered                # the confirmatory test: run ONCE

@@ -1,4 +1,4 @@
-"""Head-transform check (EXPLORATORY; decision rule in PROGRESS.md, written before running).
+"""Head-transform check (EXPLORATORY; decision rule in PREREGISTRATIONS.md, written before running).
 
 Does the translation of MediaPipe's facial transformation matrix track the real head moves in set B
 (laptop fixed), where the eye-corner estimate ``head_x/y`` did not? Fits screen x, y ~ 1 + iris (4) +

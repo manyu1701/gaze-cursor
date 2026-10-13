@@ -16,7 +16,7 @@ Usage:
 
 Keys: SPACE start, L latest full calibration (start screen), R recalibrate, T targets test,
 A accuracy test, P path test, ESC ends a test, q quits.
-Why quick by default: the pre-registered round-3 test (PROGRESS.md) found that moving your head
+Why quick by default: the pre-registered round-3 test (PREREGISTRATIONS.md) found that moving your head
 costs ~2 deg with a fixed calibration and that a fresh 9-dot calibration recovers most of it.
 """
 
@@ -106,7 +106,7 @@ def main() -> None:
                 if not check.proceed:
                     return
         names = tuple(tracker.blendshape_names)
-        smooth = make_filter(RUN_FILTER)   # chosen in M2 step 6 (PROGRESS.md)
+        smooth = make_filter(RUN_FILTER)   # chosen in M2 step 6 (PREREGISTRATIONS.md)
         calib = out.path.name if quick and isinstance(out, QuickFit) else (args.session or latest_session()).name
         dot = raw = None
         mu, sd = x_tr.mean(axis=0), x_tr.std(axis=0) + 1e-9

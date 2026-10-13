@@ -1,4 +1,4 @@
-"""M2 step 6: tune the gaze-dot smoothing on spliced fixation streams (offline; rule in PROGRESS.md).
+"""M2 step 6: tune the gaze-dot smoothing on spliced fixation streams (offline; rule in PREREGISTRATIONS.md).
 
 Development = clean v2 class-F sessions started before the round-3 freeze; held-out = after it.
 Each filter runs over every session's stream (the Run model: fresh gaze_a10 on the 9 quick dots).

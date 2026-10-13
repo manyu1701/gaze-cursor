@@ -36,7 +36,7 @@ REGISTRY: dict[str, Config] = {c.name: c for c in (
     _c("geo", 1, "geo"), _c("geo", 10, "geo"), _c("geo", 100, "geo"),  # 3b constrained: fixed geometry
 )}
 
-# Pre-registered comparison (see PROGRESS.md): reference first, candidate second.
+# Pre-registered comparison (see PREREGISTRATIONS.md): reference first, candidate second.
 PREREG_REFERENCE = "gaze_a10"
 PREREG_CANDIDATE = "gaze_blend_a100"
 PREREG_DIAGNOSTICS = ("gaze_a100", "gaze_blend_a10")

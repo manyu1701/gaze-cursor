@@ -245,7 +245,7 @@ STILL_LIMITS = {"pitch": 1.0, "yaw": 0.8, "roll": 0.6, "distance": 0.0016, "x": 
 STILL_MIN_FRAMES = 20
 # Brightness gate. Three exploratory within-session points: face 37 -> 7.3-8.6 deg, 78 -> 3.0-3.5,
 # 124 -> 1.3-1.7. 60 sits between the dim and backlit sessions (geometric mean of 37 and 78 is ~54,
-# rounded up) and is the pre-registered H3 threshold (PROGRESS.md); 100 is the recommended level.
+# rounded up) and is the pre-registered H3 threshold (PREREGISTRATIONS.md); 100 is the recommended level.
 # A three-point inference, not a measured optimum. Absolute face brightness only, never the ratio.
 LIGHT_MIN_FACE = 60.0
 LIGHT_GOOD_FACE = 100.0

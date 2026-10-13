@@ -3,7 +3,7 @@
 Recorded sessions keep only the fixation frames of each target (the eyes' travel between dots is
 not recorded). Splicing the fixations with contiguous time gives a stream of realistic noisy
 predictions in which every target change is an instant step at a known time, so the lag a filter
-adds can be measured exactly. The selection rule is in PROGRESS.md (written before tuning).
+adds can be measured exactly. The selection rule is in PREREGISTRATIONS.md (written before tuning).
 """
 
 from __future__ import annotations

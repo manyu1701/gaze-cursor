@@ -87,7 +87,7 @@ class OneEuroFilter:
         self._far = 0
 
 
-# Chosen for Run by the M2 step-6 rule (PROGRESS.md, `scripts/tune_smoothing.py`, 2026-10-13):
+# Chosen for Run by the M2 step-6 rule (PREREGISTRATIONS.md, `scripts/tune_smoothing.py`, 2026-10-13):
 # lowest development jitter with median lag50 <= 100 ms and lag90 <= 250 ms.
 RUN_FILTER: dict | None = {"kind": "oneeuro", "min_cutoff": 0.05, "beta": 0.001, "d_cutoff": 1.0}
 

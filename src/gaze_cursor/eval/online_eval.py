@@ -1,4 +1,4 @@
-"""Pre-registered round 4 (PROGRESS.md, "Round 4: self-recalibration from clicks"): does updating the
+"""Pre-registered round 4 (PREREGISTRATIONS.md, "Round 4: self-recalibration from clicks"): does updating the
 gaze model from the user's own clicks (``online.OnlineRidge``) beat the frozen quick calibration?
 
 Replays recorded Cursor sessions (``data/quick/cursor_*.npz``) click by click (prequential: each click is

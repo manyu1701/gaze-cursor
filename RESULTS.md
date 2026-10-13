@@ -3,7 +3,7 @@
 Webcam gaze tracking on a MacBook Air (built-in camera, 1470 x 956 pt screen, ~60 cm viewing distance),
 one person, recorded 2026-10-13. All errors are in **degrees of visual angle** (1 deg is about 1 cm /
 ~50 px on this screen at 60 cm). Every number below comes from a logged run (`data/results.csv`) or a
-RESULT section in `PROGRESS.md`; nothing was re-run or re-tuned for this table.
+RESULT section in `PREREGISTRATIONS.md`; nothing was re-run or re-tuned for this table.
 
 **How to read it**
 - **Unit of analysis = target (fixation), never frame.** Frames within one fixation are correlated.
@@ -44,7 +44,7 @@ The biggest effects are **conditions, not models**: lighting (+2.4 to +4.1 deg) 
 | H5' | Pooled `gaze_a100` over all calibrations vs today's centre-only model (earlier 05:57 freeze, run second) | set B, 125 targets | **-0.08** [-0.42, +0.26], 2/5 positions | NOT SUPPORTED |
 
 Two freezes of round 3 exist because two sessions worked on diverged branches; both are reported in
-the order run (PROGRESS.md, "Two freezes of round 3"). They agree: pooling earlier positions does not
+the order run (PREREGISTRATIONS.md, "Two freezes of round 3"). They agree: pooling earlier positions does not
 fix head movement; recalibrating where you sit does.
 
 ### Exploratory, with a pre-written decision rule
@@ -111,5 +111,7 @@ fix head movement; recalibrating where you sit does.
 **Sources:** `data/results.csv` rows with `confirmatory=1` (modes `losos`, `h2_cross_lighting`,
 `h3_within`, `h4_position_cost`, `h5_lopo`, `h5_lopo_earlier_freeze`) and exploratory modes
 (`vertical_*`, `compression_explore`, `smoothing_heldout`, `head_transform_check`, `live_*`);
-PROGRESS.md RESULT sections for rounds 1-3, the vertical-bias diagnosis, centre compression, smoothing,
-live tests and the head-transform check.
+[`PREREGISTRATIONS.md`](PREREGISTRATIONS.md): the protocols and RESULT sections for rounds 1-3, the
+vertical-bias diagnosis, smoothing and the head-transform check. The centre-compression exploration and the
+live-test runs are summarised here from the author's project notes and the `live_*` / `compression_explore`
+rows of `results.csv`.

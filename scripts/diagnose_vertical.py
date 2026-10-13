@@ -1,4 +1,4 @@
-"""Vertical-bias diagnosis (M2 step 3, EXPLORATORY; the gate is pre-specified in PROGRESS.md).
+"""Vertical-bias diagnosis (M2 step 3, EXPLORATORY; the gate is pre-specified in PREREGISTRATIONS.md).
 
 Every clean v2 front-lit (class F) session, two conditions:
   (a) Run today: fresh gaze_a10 on the 9 quick dots -> scored on the other 16 targets;

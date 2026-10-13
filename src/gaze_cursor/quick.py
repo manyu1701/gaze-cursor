@@ -1,4 +1,4 @@
-"""Quick recalibration where the user sits: the M2 round-3 winner (PROGRESS.md). Pure functions.
+"""Quick recalibration where the user sits: the M2 round-3 winner (PREREGISTRATIONS.md). Pure functions.
 
 A fresh ``gaze_a10`` fitted on 9 dots of the current position beat the model pooled over every
 earlier calibration by +1.29 deg (pre-registered H5, set B). The dots, their timing and the model

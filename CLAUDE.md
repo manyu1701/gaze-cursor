@@ -2,6 +2,12 @@
 
 Move the macOS cursor by tracking eye gaze through a standard webcam.
 
+## Session start (this repo is public)
+
+- The author's private progress notes live outside this repo, in `../gaze-cursor-notes/PROGRESS.md` (private GitHub repo `gaze-cursor-notes`). If it exists, read its "Start here" first and update it at the end of every session (commit and push in that repo). Never copy personal notes into this repo.
+- Every new pre-registration goes into `PREREGISTRATIONS.md` here and is committed **before** its data exists; results are appended there and summarised in `RESULTS.md`.
+- Never commit recordings, face data or anything personal: the repo is public. `main` is the only branch; push fast-forwards only (force-push and branch deletion are blocked by rulesets).
+
 ## Goal and direction
 
 - **Now:** a learning and portfolio project. Build the core gaze-estimation engine well and **measure it rigorously**.

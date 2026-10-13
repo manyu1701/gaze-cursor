@@ -1,4 +1,4 @@
-"""Vertical-bias diagnosis (M2 step 3, last part). Pure functions; the gate is in PROGRESS.md.
+"""Vertical-bias diagnosis (M2 step 3, last part). Pure functions; the gate is in PREREGISTRATIONS.md.
 
 Targets are grouped into bands by screen position (split at the midpoints between the v2 grid rows
 or columns). Per band: signed bias in degrees (vertical: positive = predicted too LOW), error
@@ -16,7 +16,7 @@ from gaze_cursor.eval.targets import calibration_grid_v2
 
 ROW_NAMES = ("top", "upper", "lower", "bottom")
 COL_NAMES = ("left", "centre-left", "centre-right", "right")
-GATE_MIN_DEG = 0.5   # pre-specified in PROGRESS.md (vertical-bias decision gate)
+GATE_MIN_DEG = 0.5   # pre-specified in PREREGISTRATIONS.md (vertical-bias decision gate)
 
 
 def band_edges(cfg: ScreenConfig, axis: int) -> np.ndarray:

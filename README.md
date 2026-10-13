@@ -110,7 +110,7 @@ uv run scripts/benchmark.py              # fit on calibration, report error on h
 uv run scripts/evaluate.py               # all clean sessions: within, leave-one-target-out, leave-one-session-out
 ```
 
-- **`gaze_overlay.py [session.npz] [--model ridge|poly2] [--features ...]`**: the live dot. It defaults to the `gaze` feature set (iris only) because raw head pose makes the dot jump when your posture drifts from calibration. Before it starts it runs the position and lighting check against the session its model was trained on (U runs anyway, with lower accuracy), and it keeps a small posture hint in the corner while you use it. `--pool` trains on every clean calibration recorded in the same lighting as the latest one (the round-3 candidate, under test; see PROGRESS.md).
+- **`gaze_overlay.py [session.npz] [--model ridge|poly2] [--features ...]`**: the live dot. It defaults to the `gaze` feature set (iris only) because raw head pose makes the dot jump when your posture drifts from calibration. Before it starts it runs the position and lighting check against the session its model was trained on (U runs anyway, with lower accuracy), and it keeps a small posture hint in the corner while you use it. `--pool` trains on every clean calibration recorded in the same lighting as the latest one (the round-3 candidate, under test; see PREREGISTRATIONS.md).
 - **`check_setup.py [--last N]`**: the posture check on its own. The reference position is computed from your recorded sessions, so it updates itself as you add sessions.
 - **`benchmark.py [session.npz] [--model ridge|poly2] [--alpha A] [--features ...]`**: offline, no camera. Prints error (px, cm, degrees; mean and median) and jitter, and appends a row to `data/results.csv`.
 - **`evaluate.py`**: the evaluation harness. It works per *target* (frames within one fixation are not independent) over all clean sessions, with bootstrap 95% confidence intervals that resample targets.
@@ -154,7 +154,7 @@ Around the pipeline: `posture.py` (setup checklist, reference posture, lighting)
 - **Record and replay.** Every session stores timestamps, landmarks, features, blendshapes and the ground-truth target positions, so models can be trained and evaluated offline.
 - **Held-out evaluation.** Calibrate on one set of targets and test on different ones; the unit of analysis is the target, not the frame.
 - **Traceable results.** Every benchmark and evaluation run appends its config, mode and metrics to `data/results.csv`.
-- **Pre-registration.** Hypotheses, protocols and success criteria are written in `PROGRESS.md` before the confirming sessions are recorded, and the analysis refuses to run until the right sessions exist.
+- **Pre-registration.** Hypotheses, protocols and success criteria are written in `PREREGISTRATIONS.md` before the confirming sessions are recorded, and the analysis refuses to run until the right sessions exist.
 - **Privacy.** Camera frames and face data never leave the device. Sessions, face images and practice runs stay in gitignored folders.
 
 ## Project layout
@@ -169,7 +169,8 @@ data/dry_runs/, data/excluded/   practice and excluded sessions (gitignored)
 data/tasks/                      target-practice recordings (gitignored, never used as calibrations)
 data/results.csv                 benchmark and evaluation log
 models/                          downloaded model files (gitignored)
-PLAN.md, PROGRESS.md             milestones; findings, decisions and pre-registrations
+PLAN.md, RESULTS.md              milestones; results table with CIs
+PREREGISTRATIONS.md              every pre-registration and its result, verbatim
 ```
 
 ## Development

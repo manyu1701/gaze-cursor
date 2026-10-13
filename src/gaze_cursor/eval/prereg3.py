@@ -1,7 +1,7 @@
-"""Pre-registered round 3 (PROGRESS.md): head position. Every threshold here is the written protocol.
+"""Pre-registered round 3 (PREREGISTRATIONS.md): head position. Every threshold here is the written protocol.
 
 H4: the current approach (REF trained on the centre session only) loses accuracy when the head moves.
-H5 (as amended before set B, PROGRESS.md): at a new position, a fresh recalibration on
+H5 (as amended before set B, PREREGISTRATIONS.md): at a new position, a fresh recalibration on
     PREREG3_DOTS quick dots beats REF trained on all other sessions (no dots), scored on the
     position's other 25 - PREREG3_DOTS targets.
 
@@ -32,7 +32,7 @@ DISPLACED = ("N", "R", "L", "Rt", "Lo")
 SLOTS_A = ("C", *DISPLACED)
 SLOTS_B = ("C", *DISPLACED, "C2")
 
-# Set A, logged in PROGRESS.md (round-3 recording log) before any model was fitted to it.
+# Set A, logged in PREREGISTRATIONS.md (round-3 recording log) before any model was fitted to it.
 SET_A = {
     "C": "session_20261013_052100.npz",
     "N": "session_20261013_052253.npz",

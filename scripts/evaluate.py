@@ -8,7 +8,7 @@ over targets. Every run is logged to data/results.csv with its mode.
   uv run scripts/evaluate.py --configs all
   uv run scripts/evaluate.py --configs gaze_a10 gaze_blend_a100 --modes losos
   uv run scripts/evaluate.py --compare gaze_a10 gaze_blend_a100 --per-target
-  uv run scripts/evaluate.py --preregistered     # the pre-registered H1 test (see PROGRESS.md)
+  uv run scripts/evaluate.py --preregistered     # the pre-registered H1 test (see PREREGISTRATIONS.md)
   uv run scripts/evaluate.py --preregistered-2   # the pre-registered round-2 tests H2 and H3
   uv run scripts/evaluate.py --positions         # M2 step 3 development: leave-one-position-out on set A
   uv run scripts/evaluate.py --preregistered-3   # round 3 (H4, H5); refuses until the candidate is frozen
@@ -146,7 +146,7 @@ def run_exploratory(args: argparse.Namespace) -> int:
 
 
 def run_preregistered(args: argparse.Namespace) -> int:
-    """The pre-registered H1 analysis (PROGRESS.md). Confirmatory: runs once, no tuning."""
+    """The pre-registered H1 analysis (PREREGISTRATIONS.md). Confirmatory: runs once, no tuning."""
     clean = clean_sessions()
     v2 = [s for s in clean if s.layout == "v2"]
     failed = [s for s in v2 if s.valid_fraction < MIN_VALID_FRACTION]
@@ -214,7 +214,7 @@ def run_preregistered(args: argparse.Namespace) -> int:
 
 
 def run_preregistered_2(args: argparse.Namespace) -> int:
-    """The pre-registered round-2 analysis (PROGRESS.md): H2 and H3. Confirmatory: run once."""
+    """The pre-registered round-2 analysis (PREREGISTRATIONS.md): H2 and H3. Confirmatory: run once."""
     clean = clean_sessions()
     sel = select_sessions(clean)
     for name, why in sel.excluded:
@@ -393,7 +393,7 @@ def dot_sweep(sessions, screen, args) -> None:
 
 
 def run_preregistered_3(args: argparse.Namespace) -> int:
-    """The pre-registered round-3 analysis (PROGRESS.md): H4 and H5. Confirmatory: run once."""
+    """The pre-registered round-3 analysis (PREREGISTRATIONS.md): H4 and H5. Confirmatory: run once."""
     if prereg3.PREREG3_CANDIDATE is None or prereg3.PREREG3_FREEZE_AFTER is None:
         print("Refusing to run: the round-3 candidate is not frozen yet (PREREG3_CANDIDATE in "
               "src/gaze_cursor/eval/prereg3.py). Develop on set A with --positions first.", file=sys.stderr)
@@ -450,7 +450,7 @@ def run_preregistered_3(args: argparse.Namespace) -> int:
 
 
 def run_preregistered_3_earlier(args: argparse.Namespace) -> int:
-    """H5 as frozen earlier on the diverged claude.ai branch (dfa75ff, PROGRESS.md "AMENDMENT 1"):
+    """H5 as frozen earlier on the diverged claude.ai branch (dfa75ff, PREREGISTRATIONS.md "AMENDMENT 1"):
     gaze_a100 pooled vs gaze_a10 on set-B C only. Run once, reported next to the executed protocol."""
     clean = clean_sessions()
     a, b = set_a(clean), select_set_b(clean, prereg3.EARLIER_FREEZE_AFTER)

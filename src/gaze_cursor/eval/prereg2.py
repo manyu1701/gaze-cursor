@@ -1,4 +1,4 @@
-"""Pre-registered round 2 (PROGRESS.md): H2 and H3. Every threshold here is the written protocol.
+"""Pre-registered round 2 (PREREGISTRATIONS.md): H2 and H3. Every threshold here is the written protocol.
 
 H2: calibrating in the lighting you will use beats a pool from other lighting.
 H3: sessions that pass the brightness gate (face >= 60) are more accurate than sessions below it.
