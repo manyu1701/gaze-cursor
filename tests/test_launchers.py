@@ -34,3 +34,21 @@ def test_run_launcher_starts_the_overlay_without_needing_a_full_calibration() ->
 def test_practice_launcher_starts_target_practice() -> None:
     text = (ROOT / "Practice.command").read_text()
     assert "scripts/target_practice.py" in text and "No calibration found yet" in text
+
+
+def test_window_class_is_created_once_per_process() -> None:
+    """Regression: the guided calibration opens two fullscreen canvases in one process, and a second
+    ``_CanvasWindow`` class definition raised "overriding existing Objective-C class"."""
+    from gaze_cursor.sinks.overlay import _make_window_class
+
+    assert _make_window_class() is _make_window_class()
+
+
+@pytest.mark.skipif(os.environ.get("CI") is not None, reason="opens (invisible) windows on a real display")
+def test_two_canvases_can_be_opened_one_after_the_other_in_one_process() -> None:
+    from gaze_cursor.config import ScreenConfig
+    from gaze_cursor.sinks.overlay import FullscreenCanvas
+
+    for _ in range(2):                                   # light-check screen, then the calibration screen
+        with FullscreenCanvas(ScreenConfig(), alpha=0.0) as canvas:
+            assert canvas.show(canvas.blank()) == -1
