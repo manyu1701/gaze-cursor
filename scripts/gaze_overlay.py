@@ -1,12 +1,19 @@
 """Live gaze dot. By default it starts with a 9-dot quick calibration where you sit (~15 s), then
-draws where you're looking; R recalibrates at any time (e.g. after you move).
+draws where you're looking; R recalibrates at any time (e.g. after you move). A live panel shows
+fps, latency, tracking, jitter and how far your head moved since calibrating.
+
+Live tests (T, P): a targets test (12 boxes; hold the dot in each for 0.5 s) and a path test (follow
+a gliding target for ~30 s). Each ends with a result screen; every frame is saved to data/quick/
+and the summary is logged to data/results.csv, so steadiness, snappiness and accuracy can be
+analysed offline.
 
 Usage:
   uv run scripts/gaze_overlay.py                    # quick 9-dot calibration, then the dot
   uv run scripts/gaze_overlay.py --latest           # use the latest full calibration instead
   uv run scripts/gaze_overlay.py session.npz [--model ridge|poly2] [--features gaze|...]
 
-Keys: SPACE start, L latest full calibration (start screen), R recalibrate, q / ESC quit.
+Keys: SPACE start, L latest full calibration (start screen), R recalibrate, T targets test,
+P path test, ESC ends a test, q quits.
 Why quick by default: the pre-registered round-3 test (PROGRESS.md) found that moving your head
 costs ~2 deg with a fixed calibration and that a fresh 9-dot calibration recovers most of it.
 """
@@ -14,6 +21,7 @@ costs ~2 deg with a fixed calibration and that a fresh 9-dot calibration recover
 from __future__ import annotations
 
 import argparse
+import json
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -28,13 +36,19 @@ from gaze_cursor.config import ScreenConfig
 from gaze_cursor.eval.session import CALIB, SESSIONS_DIR, SessionRecorder, latest_session, load_session
 from gaze_cursor.features import FEATURE_SETS, assemble, extract_features
 from gaze_cursor.filters import RUN_FILTER, make_filter
+from gaze_cursor.eval.results_log import append_rows, now
 from gaze_cursor.landmarks import FaceTracker
+from gaze_cursor.livetest import (
+    TIMEOUT_MS, WITHIN_DEG, BoxTrial, LiveStats, PathTarget, head_moved, head_shift, make_boxes, pursuit_summary,
+    summarize_boxes, to_deg)
 from gaze_cursor.posture import LIGHT_MIN_FACE, Reference, lighting_label, lighting_stats, posture_metrics
 from gaze_cursor.quick import (
     QUICK_CONFIG, QUICK_DOTS, QUICK_LAYOUT, QUICK_RECORD_S, QUICK_SETTLE_S, fit_quick, fit_report,
     missing_dots, quick_targets)
+from gaze_cursor.sinks.livetest_view import (
+    AMBER as P_AMBER, GREEN, GREY as P_GREY, RED, WHITE, draw_box, draw_gaze, draw_panel, draw_path, result_screen)
 from gaze_cursor.sinks.overlay import FullscreenCanvas
-from gaze_cursor.sinks.posture_view import draw_chip, run_posture_check
+from gaze_cursor.sinks.posture_view import run_posture_check
 
 OOD_Z = 4.0  # warn when a live feature is this many calibration std-devs from its mean
 STAGES = ("camera read", "landmarks", "features + predict + filter", "draw + show")
@@ -217,9 +231,12 @@ def main() -> None:
                     return
         names = tuple(tracker.blendshape_names)
         smooth = make_filter(RUN_FILTER)   # chosen in M2 step 6 (PROGRESS.md)
-        dot = None
+        calib = out.path.name if quick and isinstance(out, QuickFit) else (args.session or latest_session()).name
+        dot = raw = None
         mu, sd = x_tr.mean(axis=0), x_tr.std(axis=0) + 1e-9
         worst_z = 0.0
+        stats = LiveStats()
+        test: LiveTest | None = None
         timing: list[list[float]] = []   # per frame: monotonic ms at the 5 stage boundaries
         while True:
             t0 = time.monotonic() * 1000
@@ -227,41 +244,208 @@ def main() -> None:
             t1 = time.monotonic() * 1000
             result = tracker.process(frame) if frame is not None else None
             t2 = time.monotonic() * 1000
-            metrics = None
+            metrics, x, raw = None, None, None
             if frame is not None and result is not None:
                 h, w = frame.image.shape[:2]
                 metrics = posture_metrics(result.points, result.transform, (w, h))
                 feats = extract_features(result.points, result.transform, (w, h))
                 if feats is not None:
                     x = assemble(feats, result.blendshapes, names, features)
-                    dot = smooth.update(frame.timestamp_ms, model.predict(x)[0])
+                    raw = model.predict(x)[0]
+                    dot = smooth.update(frame.timestamp_ms, raw)
                     worst_z = float(np.max(np.abs((x - mu) / sd)))
+            shift = head_shift(metrics, ref.center) if metrics is not None and ref is not None else None
             t3 = time.monotonic() * 1000
+            if test is not None and frame is not None:
+                test.update(frame.timestamp_ms, raw, dot if raw is not None else None, shift, x)
             img = canvas.blank()
-            if dot is not None:
-                canvas.dot(img, (np.clip(dot[0], 0, cfg.width_px), np.clip(dot[1], 0, cfg.height_px)),
-                           color=(0, 255, 0), r=20)
-            if ref is not None:
-                draw_chip(canvas, img, ref, metrics)
-            canvas.text(img, "R: recalibrate here (9 dots)     q / ESC: quit", y=canvas.size[1] - 30)
-            if worst_z > OOD_Z:
-                canvas.text(img, f"input is {worst_z:.0f} sd from calibration: press R to recalibrate here",
-                            y=canvas.size[1] - 70)
+            # Panels first, so a target box under a panel is still drawn on top of it.
+            draw_panel(canvas, img, live_lines(stats, cfg, shift, worst_z), "left")
+            if test is not None:
+                draw_panel(canvas, img, test.lines(), "right")
+                test.draw(canvas, img, time.monotonic() * 1000)
+            draw_gaze(canvas, img, dot, raw)
+            if test is not None:
+                canvas.text(img, "ESC: end the test", y=canvas.size[1] - 30)
+            else:
+                canvas.text(img, "T: targets test     P: path test     R: recalibrate here     q: quit",
+                            y=canvas.size[1] - 30)
             key = canvas.show(img)
-            timing.append([t0, t1, t2, t3, time.monotonic() * 1000])
-            if key in (27, ord("q")):
+            t4 = time.monotonic() * 1000
+            timing.append([t0, t1, t2, t3, t4])
+            stats.add(t4, t4 - t1, raw is not None, dot)
+            if test is not None and (test.done or key == 27):
+                key = finish_test(cam, canvas, test, calib, cfg, aborted=not test.done)
+                test = None
+                timing.append([np.nan] * 5)
+            if key == ord("q") or (key == 27 and test is None):
                 break
-            if key in (ord("r"), ord("R")):
+            if test is None and key in (ord("t"), ord("T"), ord("p"), ord("P")):
+                test = LiveTest("targets" if key in (ord("t"), ord("T")) else "path", cfg, time.monotonic() * 1000)
+            if test is None and key in (ord("r"), ord("R")):
                 out = calibrate_here(cam, tracker, canvas, cfg)
                 if out is None:
                     break
                 if isinstance(out, QuickFit):
-                    model, x_tr = out.model, out.x
+                    model, x_tr, calib = out.model, out.x, out.path.name
                     features, ref = "gaze", Reference.from_current(out.posture)
                     mu, sd = x_tr.mean(axis=0), x_tr.std(axis=0) + 1e-9
                     smooth.reset(); dot = None; worst_z = 0.0
                 timing.append([np.nan] * 5)   # the recalibration is not part of the live loop
     report_latency(np.array(timing))
+
+
+def live_lines(stats: LiveStats, cfg: ScreenConfig, shift, worst_z: float) -> list[tuple[str, tuple]]:
+    """The live metrics panel."""
+    lines = [(f"{stats.fps():4.1f} fps    frame -> screen {stats.latency_ms():4.1f} ms", WHITE),
+             (f"face tracked {stats.tracked() * 100:3.0f}%    jitter {stats.jitter_deg(cfg):4.2f} deg (last 0.5 s)",
+              WHITE if stats.tracked() > 0.9 else P_AMBER)]
+    if shift is not None:
+        ratio, dx, dy = shift
+        moved = head_moved(ratio, dx, dy)
+        lines.append((f"head vs calibration: distance x{ratio:.2f}, {abs(dx):.1f} cm {'left' if dx > 0 else 'right'},"
+                      f" {abs(dy):.1f} cm {'lower' if dy > 0 else 'higher'}", P_AMBER if moved else P_GREY))
+        if moved:
+            lines.append(("you moved since calibrating: accuracy drops; press R to recalibrate here", P_AMBER))
+    if worst_z > OOD_Z:
+        lines.append((f"eye input {worst_z:.0f} sd outside the calibration: press R", P_AMBER))
+    lines.append((f"model {QUICK_CONFIG} on {QUICK_DOTS} dots, filter One-Euro", P_GREY))
+    return lines
+
+
+class LiveTest:
+    """One running targets or path test; collects every frame for saving and scoring."""
+
+    def __init__(self, kind: str, cfg: ScreenConfig, start_ms: float) -> None:
+        self.kind, self.cfg, self.start_ms = kind, cfg, start_ms
+        self.rows: list[list[float]] = []    # t, raw x y, dot x y, target x y, trial, head ratio dx dy
+        self.feats: list[np.ndarray] = []
+        self.done = False
+        if kind == "targets":
+            self.seed = int(start_ms) % 2**31
+            self.boxes = make_boxes(cfg, seed=self.seed)
+            self.trials = [BoxTrial(self.boxes[0], start_ms)]
+        else:
+            self.path = PathTarget(cfg)
+
+    @property
+    def trial(self) -> BoxTrial:
+        return self.trials[-1]
+
+    def target_at(self, t_ms: float) -> np.ndarray:
+        if self.kind == "targets":
+            return np.array(self.trial.box.center)
+        return self.path.at((t_ms - self.start_ms) / 1000)
+
+    def update(self, t_ms: float, raw, dot, shift, x) -> None:
+        if self.done or t_ms < self.start_ms:
+            return
+        tgt = self.target_at(t_ms)
+        nan2 = [np.nan, np.nan]
+        self.rows.append([t_ms, *(raw if raw is not None else nan2), *(dot if dot is not None else nan2), *tgt,
+                          len(self.trials) - 1 if self.kind == "targets" else 0, *(shift or [np.nan] * 3)])
+        self.feats.append(x if x is not None else np.full(4, np.nan))
+        if self.kind == "targets":
+            self.trial.update(t_ms, dot)
+            if self.trial.done:
+                if len(self.trials) == len(self.boxes):
+                    self.done = True
+                else:
+                    self.trials.append(BoxTrial(self.boxes[len(self.trials)], t_ms))
+        elif (t_ms - self.start_ms) / 1000 >= self.path.duration_s:
+            self.done = True
+
+    def draw(self, canvas: FullscreenCanvas, img: np.ndarray, now_ms: float) -> None:
+        if self.kind == "targets":
+            tr = self.trial
+            draw_box(canvas, img, tr.box, tr.dwell_fraction(now_ms), tr.status == "inside")
+        else:
+            t_s = (now_ms - self.start_ms) / 1000
+            close = bool(self.rows) and np.isfinite(self.rows[-1][3]) and \
+                to_deg(np.hypot(self.rows[-1][3] - self.rows[-1][5], self.rows[-1][4] - self.rows[-1][6]), self.cfg) <= WITHIN_DEG
+            draw_path(canvas, img, self.path, t_s, close)
+
+    def lines(self) -> list[tuple[str, tuple]]:
+        if self.kind == "targets":
+            res = [t.result(self.cfg) for t in self.trials if t.done]
+            hits = sum(r["hit"] for r in res)
+            out = [(f"Targets test: box {len(self.trials)}/{len(self.boxes)}   hits {hits}/{len(res)}", WHITE),
+                   (f"hold the dot in the box for 0.5 s (max {TIMEOUT_MS / 1000:.0f} s)", P_GREY)]
+            if res:
+                r = res[-1]
+                out.append((f"last: {'hit in %.0f ms' % r['hit_ms'] if r['hit'] else 'missed'}, "
+                            f"off by {r['error_deg']:.1f} deg", GREEN if r["hit"] else RED))
+            return out
+        a = np.array(self.rows) if self.rows else np.zeros((0, 11))
+        t = (a[:, 0] - self.start_ms) / 1000 if len(a) else np.zeros(0)
+        ok = (t >= 1.0) & np.isfinite(a[:, 3]) if len(a) else np.zeros(0, bool)
+        err = to_deg(np.hypot(a[ok, 3] - a[ok, 5], a[ok, 4] - a[ok, 6]), self.cfg) if ok.any() else np.zeros(0)
+        out = [(f"Path test: {t[-1] if len(t) else 0:4.1f} / {self.path.duration_s:.0f} s   follow the circle", WHITE)]
+        if len(err):
+            out.append((f"distance now {err[-1]:.1f} deg   mean {err.mean():.1f} deg   within 3 deg "
+                        f"{(err <= WITHIN_DEG).mean() * 100:.0f}%", WHITE))
+        return out
+
+    def summary(self) -> tuple[str, list[tuple[str, tuple]], dict, list[dict] | None]:
+        a = np.array(self.rows) if self.rows else np.zeros((0, 11))
+        head = a[:, 8:11] if len(a) else np.zeros((0, 3))
+        moved = float(np.mean([head_moved(*h) for h in head if np.all(np.isfinite(h))])) if len(head) else float("nan")
+        if self.kind == "targets":
+            res = [t.result(self.cfg) for t in self.trials if t.done]
+            s = summarize_boxes(res)
+            if not s.get("n"):
+                return "Targets test", [("no boxes finished", RED)], s, res
+            dx, dy = s["offset_deg"]
+            lines = [(f"hits {s['hit_rate'] * 100:.0f}% of {s['n']} boxes   (5 deg boxes "
+                      f"{s.get('hit_rate_5deg', float('nan')) * 100:.0f}%, 3 deg boxes {s.get('hit_rate_3deg', float('nan')) * 100:.0f}%)", WHITE),
+                     (f"snappy: first entry {s['median_entry_ms']:.0f} ms, hit {s['median_hit_ms']:.0f} ms (medians)", WHITE),
+                     (f"accurate: off by {s['error_deg']:.1f} deg on average; overall shift {abs(dx):.1f} deg "
+                      f"{'right' if dx > 0 else 'left'}, {abs(dy):.1f} deg {'low' if dy > 0 else 'high'}", WHITE),
+                     (f"steady: jitter {s['jitter_deg']:.2f} deg while holding", WHITE)]
+            s["head_moved_frac"] = moved
+        else:
+            ok = np.isfinite(a[:, 3]) if len(a) else np.zeros(0, bool)
+            s = pursuit_summary((a[ok, 0] - self.start_ms) / 1000, a[ok][:, 3:5], self.path, self.cfg) if ok.any() else {"n": 0}
+            if s.get("n", 0) < 10:
+                return "Path test", [("too few tracked frames", RED)], s, None
+            lines = [(f"distance from the target: mean {s['error_deg']:.1f} deg, median {s['median_deg']:.1f} deg", WHITE),
+                     (f"within 3 deg {s['within'] * 100:.0f}% of the time", WHITE),
+                     (f"snappy: the dot trails the target by about {s['lag_ms']:.0f} ms "
+                      f"(error {s['error_at_lag_deg']:.1f} deg after removing the lag)", WHITE)]
+            s["head_moved_frac"] = moved
+        if np.isfinite(moved) and moved > 0.1:
+            lines.append((f"your head was away from the calibration position {moved * 100:.0f}% of the time", P_AMBER))
+        return ("Targets test" if self.kind == "targets" else "Path test"), lines, s, \
+            ([t.result(self.cfg) for t in self.trials if t.done] if self.kind == "targets" else None)
+
+
+def finish_test(cam: Camera, canvas: FullscreenCanvas, test: LiveTest, calib: str, cfg: ScreenConfig,
+                aborted: bool) -> int:
+    """Score, save and log the test, show its result screen; returns the key pressed there."""
+    title, lines, summary, boxes = test.summary()
+    if aborted:
+        title += " (ended early)"
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    QUICK_DIR.mkdir(parents=True, exist_ok=True)
+    path = QUICK_DIR / f"livetest_{test.kind}_{stamp}.npz"
+    meta = {"kind": test.kind, "calibration": calib, "filter": RUN_FILTER, "model": QUICK_CONFIG,
+            "screen": cfg.to_dict(), "start_ms": test.start_ms, "aborted": aborted, "summary": summary,
+            "boxes": boxes, "seed": getattr(test, "seed", None), "started": stamp,
+            "columns": ["t_ms", "raw_x", "raw_y", "dot_x", "dot_y", "target_x", "target_y", "trial",
+                        "head_ratio", "head_dx_cm", "head_dy_cm"]}
+    np.savez_compressed(path, rows=np.array(test.rows, float), features=np.array(test.feats, float),
+                        meta=json.dumps(meta, default=float))
+    print(f"{title}: " + "; ".join(t for t, _ in lines) + f"  (saved {path.name})")
+    note = "; ".join(t for t, _ in lines)
+    append_rows([{"time": now(), "mode": f"live_{test.kind}", "confirmatory": 0, "session": calib,
+                  "config": f"{QUICK_CONFIG} + One-Euro", "n_targets": summary.get("n", 0),
+                  "err_deg_mean": summary.get("error_deg"), "jitter_deg": summary.get("jitter_deg"),
+                  "note": ("ABORTED; " if aborted else "") + note}])
+    while True:
+        cam.read()                          # keep the camera buffer fresh while the screen waits
+        key = canvas.show(result_screen(canvas, title, lines, boxes))
+        if key in (32, ord("q"), ord("t"), ord("T"), ord("p"), ord("P"), 27):
+            return -1 if key in (32, 27) else key
 
 
 def report_latency(t: np.ndarray) -> None:
