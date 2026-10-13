@@ -18,7 +18,8 @@ import numpy as np
 
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.filters import RUN_FILTER, make_filter
-from gaze_cursor.livetest import head_moved, to_deg
+from gaze_cursor.livetest import head_moved, px_per_deg, to_deg
+from gaze_cursor.online import GATE_DEG, OnlineRidge, click_label
 from gaze_cursor.sinks.cursor import InputEvent
 
 OOD_Z = 4.0                 # same input-range rule as Run
@@ -56,6 +57,13 @@ class CursorSession:
     # [frame time from which it is active (None until the next frame), calibration file]: replay needs
     # to know which calibration produced each part of the session.
     calibrations: list[list] = field(default_factory=list)
+    learn: bool = False                 # update ``model`` (an OnlineRidge) from the user's clicks
+    resumed: str = ""                   # non-empty: the calibration came from an earlier run (its age, in words)
+    learned: int = 0                    # clicks the model has learned from since the last (re)calibration
+    first_ms: float | None = None
+    last_ms: float = 0.0
+    banner: str = ""                    # e.g. "DEMO: nothing is saved", shown first on the chip
+    calibrated_at: float = field(default_factory=time.time)   # epoch s of the 9 dots (carried over on resume)
 
     def __post_init__(self) -> None:
         self.smooth = make_filter(RUN_FILTER)
@@ -72,6 +80,8 @@ class CursorSession:
         self.dot = self.raw = None
         self.worst_z, self.last_good_ms = 0.0, -np.inf
         self.calibrations.append([None, calib])
+        self.calibrated_at = time.time()
+        self.learned = 0
 
     # --- per frame -----------------------------------------------------------------------------
     def frame(self, t_ms: float, x: np.ndarray | None, shift: tuple[float, float, float] | None) -> None:
@@ -80,6 +90,9 @@ class CursorSession:
             self.calibrations[-1][0] = float(t_ms)
         self.shift = shift
         self.raw = None
+        self.last_ms = float(t_ms)
+        if self.first_ms is None:
+            self.first_ms = float(t_ms)
         if x is not None:
             self.raw = np.asarray(self.model.predict(x))[0]
             self.dot = self.smooth.update(t_ms, self.raw)
@@ -117,26 +130,56 @@ class CursorSession:
                 self.message = f"no jump: {reason}"
             else:
                 action, ok, self.message = "warp", 1.0, ""
+        if event.kind == "click" and event.xy is not None and self.learn:
+            ok = float(self._learn_from_click(event))      # in the log, a click's "warped" column = learned
         exy = event.xy if event.xy is not None else (xy if xy is not None else (np.nan, np.nan))
         button = {"left": 1.0, "right": 2.0}.get(event.button or "", 0.0)
         self.events.append([event.t_ms, float(EVENT_CODES[event.kind]), *exy, button, ok, float(self.enabled)])
         return action, xy
 
+    def _learn_from_click(self, event: InputEvent) -> bool:
+        """Round 4's rule (H6, supported): the click labels the fixation just before it; the model learns
+        from it unless the click is further than GATE_DEG from what the model predicted (a stray click)."""
+        if not isinstance(self.model, OnlineRidge) or not self.frames or event.xy is None:
+            return False
+        recent = np.array(self.frames[-60:], float)
+        x = click_label(recent[:, 0], recent[:, 5:9], event.t_ms, LABEL_WINDOW_MS)
+        if x is None:
+            return False
+        target = np.asarray(event.xy, float)
+        if np.hypot(*(self.model.predict(x)[0] - target)) / px_per_deg(self.cfg) > GATE_DEG:
+            return False
+        self.model.update(x, target)
+        self.learned += 1
+        return True
+
     # --- display -------------------------------------------------------------------------------
+    def elapsed_min(self) -> float:
+        """Minutes of use by the camera frame clock (a closed lid does not count)."""
+        return 0.0 if self.first_ms is None else (self.last_ms - self.first_ms) / 60000
+
     def moved(self) -> bool:
         return self.shift is not None and head_moved(*self.shift)
 
     def status_lines(self) -> list[tuple[str, str]]:
         """(text, level) with level in ok / warn / off."""
+        head = [(self.banner, "warn")] if self.banner else []
         if not self.enabled:
-            return [("gaze warp OFF (Cmd+Option+G)", "off")]
-        lines = [("gaze warp ON: tap Right Command", "ok")]
+            return head + [("gaze warp OFF (Cmd+Option+G)", "off")]
+        lines = head + [("gaze warp ON: tap Right Command", "ok")]
         if self.dot is None or self.raw is None:
             lines.append(("face not tracked", "warn"))
         if self.moved():
             lines.append(("you moved since calibrating (Cmd+Option+R)", "warn"))
         if self.message:
             lines.append((self.message, "warn" if self.message.startswith("no jump") else "ok"))
+        minutes = int(self.elapsed_min())
+        info = f"on {minutes // 60}:{minutes % 60:02d} h" if minutes >= 60 else f"on {minutes} min"
+        if self.learn:
+            info += f", learned from {self.learned} clicks"
+        lines.append((info, "off"))
+        if self.resumed and minutes < 1:
+            lines.append((f"using your calibration from {self.resumed}", "off"))
         return lines
 
     # --- record and replay ---------------------------------------------------------------------
@@ -170,17 +213,23 @@ class CursorSession:
                 "clicks": int((e[:, 1] == EVENT_CODES["click"]).sum()) if len(e) else 0,
                 "click_gaze_deg_median": float(np.median(err)) if len(err) else None,
                 "click_gaze_deg_mean": float(err.mean()) if len(err) else None,
-                "click_gaze_n": int(len(err))}
+                "click_gaze_n": int(len(err)), "clicks_learned": self.learned}
 
     def save(self, directory: Path) -> Path:
+        """Write the whole session (atomically: a crash mid-write keeps the previous autosave)."""
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"cursor_{self.started}.npz"
+        tmp = directory / f".cursor_{self.started}.tmp.npz"
         meta = {"kind": "cursor_session", "calibration": self.calib, "calibrations": self.calibrations,
                 "filter": RUN_FILTER,
                 "screen": self.cfg.to_dict(), "started": self.started, "frame_columns": self.FRAME_COLUMNS,
                 "event_columns": self.EVENT_COLUMNS, "event_codes": EVENT_CODES,
-                "label_window_ms": LABEL_WINDOW_MS, "summary": self.summary()}
-        np.savez_compressed(path, frames=np.array(self.frames, float).reshape(-1, len(self.FRAME_COLUMNS)),
+                "label_window_ms": LABEL_WINDOW_MS, "summary": self.summary(),
+                "event_notes": {"click.warped": "1 = the model learned from this click (learning on); warp rows: 1 = jumped"},
+                "learning": {"on": self.learn, "resumed": self.resumed, "gate_deg": GATE_DEG,
+                             "forget": getattr(self.model, "forget", None)}}
+        np.savez_compressed(tmp, frames=np.array(self.frames, float).reshape(-1, len(self.FRAME_COLUMNS)),
                             events=np.array(self.events, float).reshape(-1, len(self.EVENT_COLUMNS)),
                             meta=json.dumps(meta))
+        tmp.replace(path)
         return path

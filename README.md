@@ -45,7 +45,8 @@ Double-click these in Finder. They open Terminal, which already has the Camera p
 | --- | --- |
 | **`Calibrate.command`** | Asks for an optional note, then (1) a dark, calibration-like screen with a live lighting reading, the brightness gate and front-light tips (SPACE continues, ESC quits), (2) the live setup checklist, (3) the 25-dot calibration. The lighting is captured automatically and saved with the session. |
 | **`Run.command`** | The live gaze dot: a 9-dot quick calibration where you sit (~15 s), then the dot, a live metrics panel and live tests (T targets, A accuracy with the dot hidden, P path); R recalibrates. |
-| **`Cursor.command`** | **Cursor mode (M3):** after the quick calibration, tap **Right Command** in any app and the real cursor jumps to where you look; finish with the trackpad and click as usual. Cmd+Option+G on/off, Cmd+Option+R recalibrate, Cmd+Option+X quit. First run: grant **Input Monitoring** to Terminal (System Settings > Privacy & Security). Every frame and click is logged to `data/quick/cursor_*.npz` (positions only) for the self-recalibration work. |
+| **`Cursor.command`** | **Cursor mode (M3):** after the quick calibration, tap **Right Command** in any app and the real cursor jumps to where you look; finish with the trackpad and click as usual. Cmd+Option+G on/off, Cmd+Option+R recalibrate, Cmd+Option+X quit. First run: grant **Input Monitoring** to Terminal (System Settings > Privacy & Security). Every frame and click is logged to `data/quick/cursor_*.npz` (positions only) for the self-recalibration work. Reuses your last calibration (under 12 h old, same screen) so most starts need no dots, and learns from your trackpad clicks (round 4: small gain, mostly in long sessions). Autosaves every 5 min and saves on quit or when you close the window; quitting closes the window by itself. `--fresh` always calibrates, `--no-learn` freezes the model. |
+| **`Demo.command`** | **Show a friend:** their own 9-dot calibration, a faint ring shows where the tracker thinks they look, tap Right Command to jump. **Nothing is saved** (no recording, no log, no results row, your saved calibration untouched). |
 | **`Practice.command`** | Target practice: a box appears and you move the gaze dot into it with your eyes, holding it until the box fills. The box shrinks after hits and grows after misses; the summary tells you the smallest box you can reliably hit, how fast you hit, how far the dot sits from where you look, and whether it is systematically shifted. Uses your latest calibration (`--pool` for all calibrations in the same lighting). |
 
 ## Recording a session
@@ -160,7 +161,7 @@ Around the pipeline: `posture.py` (setup checklist, reference posture, lighting)
 ## Project layout
 
 ```
-Calibrate.command, Run.command, Practice.command, Cursor.command   one-click launchers (macOS)
+Calibrate.command, Run.command, Practice.command, Cursor.command, Demo.command   one-click launchers (macOS)
 src/gaze_cursor/                 capture, landmarks, features, calibration, posture, config, eval/, sinks/
 scripts/                         viewer, download_model, calibrate, check_setup, gaze_overlay, benchmark, evaluate, positions, diagnose_positions, target_practice
 tests/                           pytest suite

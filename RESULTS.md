@@ -1,7 +1,7 @@
 # M2 results: what changed accuracy, and by how much
 
 Webcam gaze tracking on a MacBook Air (built-in camera, 1470 x 956 pt screen, ~60 cm viewing distance),
-one person, recorded 2026-10-13. All errors are in **degrees of visual angle** (1 deg is about 1 cm /
+one person, recorded 2026-10-13 (round 4 / H6: 2026-10-13 to 10-14). All errors are in **degrees of visual angle** (1 deg is about 1 cm /
 ~50 px on this screen at 60 cm). Every number below comes from a logged run (`data/results.csv`) or a
 RESULT section in `PREREGISTRATIONS.md`; nothing was re-run or re-tuned for this table.
 
@@ -9,7 +9,7 @@ RESULT section in `PREREGISTRATIONS.md`; nothing was re-run or re-tuned for this
 - **Unit of analysis = target (fixation), never frame.** Frames within one fixation are correlated.
 - **Held-out:** "held-out targets" = targets not used to fit the model; "held-out sessions" = a whole
   session (different time / lighting / position) not used to fit it.
-- **CI** = 95% bootstrap interval resampling targets (10,000 resamples). **d** = paired difference on
+- **CI** = 95% bootstrap interval resampling targets (10,000 resamples; H6 resamples clicks, and also reports a sessions-then-clicks CI). **d** = paired difference on
   the same targets (positive = the change helps).
 - **Pre-registered** = hypothesis, data rule and success criteria committed to git before the data
   existed; run once, no re-tuning. **Exploratory** = chosen or seen after looking at data: a hypothesis,
@@ -42,6 +42,7 @@ The biggest effects are **conditions, not models**: lighting (+2.4 to +4.1 deg) 
 | H4 | Head moved ~10 cm (near / far / left / right / lower) with a fixed calibration | set B, 6 sessions, 150 targets | **+1.94 deg worse** [+1.13, +2.65], 5/5 positions | SUPPORTED |
 | H5 | Fresh 9-dot recalibration at the new position vs a model pooled over all other positions (13:12 freeze) | set B, 80 targets | **+1.29** [+0.80, +1.77], 5/5 positions | SUPPORTED |
 | H5' | Pooled `gaze_a100` over all calibrations vs today's centre-only model (earlier 05:57 freeze, run second) | set B, 125 targets | **-0.08** [-0.42, +0.26], 2/5 positions | NOT SUPPORTED |
+| H6 | Cursor mode learns from the user's clicks (online ridge, gate 6 deg) vs the frozen 9-dot calibration (round 4) | 3 Cursor-mode sessions (67 / 10 / 13 min), 332 evaluated clicks | **+0.64** [+0.44, +0.85] (click-level CI); per session +0.80 / -0.07 / +0.01; sessions-then-clicks CI [-0.15, +0.88] | SUPPORTED by the frozen rule, **low confidence**: one 67-min session holds 81% of the clicks and nearly all of the gain; criterion (c) passes only on paper (one of the two passing sessions is +0.01, so one session improved and two did not change); the sessions-then-clicks CI includes 0 and the click-level CI treats clicks as independent (optimistic), so 3 sessions are not conclusive; equal-weight session mean ~+0.25 (post hoc); *post hoc:* the gain may just be "learning helps over long sessions" (frozen median 5.2 vs 4.0-4.2 deg); absolute error 4.2-5.3 deg vs click labels; clicks are an imperfect label and the 10 deg evaluation gate is a judgement call. Consequence per protocol: Cursor mode learns from clicks by default |
 
 Two freezes of round 3 exist because two sessions worked on diverged branches; both are reported in
 the order run (PREREGISTRATIONS.md, "Two freezes of round 3"). They agree: pooling earlier positions does not
@@ -94,7 +95,7 @@ fix head movement; recalibrating where you sit does.
 
 ## Caveats
 
-- **One person, one room, one camera, one day.** Cross-person and cross-camera accuracy is untested (M5).
+- **One person, one room, one camera, two days.** Cross-person and cross-camera accuracy is untested (M5).
 - Positions were discrete and moderate (~10 cm); set B was recorded in the same sitting as its freeze.
 - Several exploratory comparisons were run on the same 21 front-lit sessions; their small effects
   (<= 0.25 deg) need confirmation on new sessions.
@@ -109,9 +110,9 @@ fix head movement; recalibrating where you sit does.
   (M3); proper fix: pretrained gaze direction + tracked head pose (step 8).
 
 **Sources:** `data/results.csv` rows with `confirmatory=1` (modes `losos`, `h2_cross_lighting`,
-`h3_within`, `h4_position_cost`, `h5_lopo`, `h5_lopo_earlier_freeze`) and exploratory modes
+`h3_within`, `h4_position_cost`, `h5_lopo`, `h5_lopo_earlier_freeze`, `h6_click_learning`) and exploratory modes
 (`vertical_*`, `compression_explore`, `smoothing_heldout`, `head_transform_check`, `live_*`);
-[`PREREGISTRATIONS.md`](PREREGISTRATIONS.md): the protocols and RESULT sections for rounds 1-3, the
+[`PREREGISTRATIONS.md`](PREREGISTRATIONS.md): the protocols and RESULT sections for rounds 1-4, the
 vertical-bias diagnosis, smoothing and the head-transform check. The centre-compression exploration and the
 live-test runs are summarised here from the author's project notes and the `live_*` / `compression_explore`
 rows of `results.csv`.

@@ -4,6 +4,13 @@ Starts with the 9-dot quick calibration where you sit (same as Run), then gets o
 transparent status chip in the top-right corner, every app keeps working, clicks go through. The cursor
 only ever moves when you tap the hotkey, and not when the tracker cannot see your eyes.
 
+Starts instantly when a calibration from the last 12 h (same screen) exists: it is reused, together with
+what the model learned from your clicks. Click learning is on (round 4, H6): every trackpad click nudges
+the model towards where you looked. The session is autosaved every 5 min and saved when you quit, close
+the window or the process is shut down. --fresh forces the 9-dot calibration; --no-learn turns learning off.
+--demo (Demo.command) is for showing a friend: their own 9-dot calibration, the gaze ring visible, and
+NOTHING written to disk (no calibration recording, no session log, no saved calibration, no results row).
+
 Hotkeys (work in any app): tap Right Command = jump to gaze; Cmd+Option+G = on / off;
 Cmd+Option+R = recalibrate; Cmd+Option+X (or Ctrl+C here) = quit.
 
@@ -11,22 +18,28 @@ Every frame (gaze, head shift) and every hotkey / click is saved to data/quick/c
 (positions only, no images) and summarised in data/results.csv, so self-recalibration from clicks can be
 built and judged offline. Needs Input Monitoring permission for Terminal (it explains how).
 
-  uv run scripts/cursor_mode.py [--show-dot] [--warp-key right_command|right_option]
+  uv run scripts/cursor_mode.py [--show-dot] [--fresh] [--no-learn] [--demo] [--warp-key right_command|right_option]
 """
 
 from __future__ import annotations
 
 import argparse
+import signal
+import subprocess
 import time
+from types import SimpleNamespace
 
 
+from gaze_cursor import resume
 from gaze_cursor.capture import Camera
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.cursor_session import CursorSession
+from gaze_cursor.eval.configs import REGISTRY
 from gaze_cursor.eval.results_log import append_rows, now
 from gaze_cursor.features import assemble, extract_features
 from gaze_cursor.landmarks import FaceTracker
 from gaze_cursor.livetest import head_shift
+from gaze_cursor.online import OnlineRidge
 from gaze_cursor.posture import Reference, posture_metrics
 from gaze_cursor.quick import QUICK_CONFIG
 from gaze_cursor.sinks.cursor import (
@@ -37,17 +50,51 @@ from gaze_cursor.sinks.overlay import ClickThroughOverlay, FullscreenCanvas
 from gaze_cursor.sinks.quick_view import QUICK_DIR, QuickFit, calibrate_here
 
 NOTE = "quick calibration (Cursor)"
+AUTOSAVE_S = 300.0
 LEVEL_COLORS = {"ok": GREEN, "warn": AMBER, "off": GREY}
 
 
-def calibrate(cam: Camera, tracker: FaceTracker, cfg: ScreenConfig) -> QuickFit | None:
+def calibrate(cam: Camera, tracker: FaceTracker, cfg: ScreenConfig, record: bool = True) -> QuickFit | None:
     """The quick calibration on its own fullscreen canvas (closed again afterwards)."""
     with FullscreenCanvas(cfg) as canvas:
-        out = calibrate_here(cam, tracker, canvas, cfg, NOTE)
+        out = calibrate_here(cam, tracker, canvas, cfg, NOTE, record)
     if isinstance(out, str):
         print("Cursor mode always uses a fresh quick calibration (L is not available here).")
         return None
     return out
+
+
+def learner(fit: QuickFit, learn: bool):
+    """The model Cursor mode runs: the quick fit as an online ridge (identical predictions at the start)
+    when learning is on and the fit carries its dots' positions, else the frozen fit."""
+    if learn and fit.y is not None:
+        return OnlineRidge.from_calibration(fit.x, fit.y, REGISTRY[QUICK_CONFIG].alpha)
+    return fit.model
+
+
+def remember(session: CursorSession, cfg: ScreenConfig) -> None:
+    """Write the resume file (calibration + learned state) so the next start needs no dots."""
+    if isinstance(session.model, OnlineRidge) and session.ref_center is not None:
+        resume.save(QUICK_DIR, session.model, session.x_train, session.ref_center, session.calib, cfg,
+                    session.calibrated_at)
+
+
+def notify(text: str) -> None:
+    """A macOS notification (best effort: it may be switched off for Terminal)."""
+    try:
+        subprocess.run(["osascript", "-e", f'display notification "{text}" with title "gaze-cursor"'],
+                       check=False, timeout=5, capture_output=True)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def ago(hours: float) -> str:
+    return f"{hours * 60:.0f} min ago" if hours < 1 else f"{hours:.0f} h ago"
+
+
+def stop_on_signal(signum, frame) -> None:
+    """Closing the Terminal window (SIGHUP) or a kill (SIGTERM) quits cleanly, so the session is saved."""
+    raise KeyboardInterrupt
 
 
 def process_frame(session: CursorSession, frame, result, names: tuple[str, ...], ref: Reference | None) -> None:
@@ -77,18 +124,26 @@ def finish(session: CursorSession) -> None:
     s = session.summary()
     med = s["click_gaze_deg_median"]
     note = (f"{s['minutes']:.1f} min, face tracked {s['tracked'] * 100:.0f}%; {s['warps']} jumps "
-            f"({s['warps_refused']} refused); {s['clicks']} clicks"
+            f"({s['warps_refused']} refused); {s['clicks']} clicks ({s['clicks_learned']} learned from)"
             + (f"; click vs gaze just before it: median {med:.1f} deg (mean {s['click_gaze_deg_mean']:.1f}, "
                f"n {s['click_gaze_n']})" if med is not None else ""))
     append_rows([{"time": now(), "mode": "cursor_session", "confirmatory": 0, "session": session.calib,
                   "config": f"{QUICK_CONFIG} + One-Euro", "n_frames": s["frames"], "n_targets": s["clicks"],
                   "err_deg_mean": s["click_gaze_deg_mean"], "err_deg_median": med, "note": note}])
-    print(f"saved {path.name}: {note}")
+    try:
+        print(f"saved {path.name}: {note}")
+    except OSError:         # the Terminal window was closed (SIGHUP): the data is already on disk
+        pass
+    notify(f"Saved: {s['minutes']:.0f} min, {s['clicks']} clicks, {s['clicks_learned']} learned from")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--show-dot", action="store_true", help="draw a faint ring where the tracker thinks you look")
+    ap.add_argument("--fresh", action="store_true", help="always run the 9-dot calibration (do not reuse the last)")
+    ap.add_argument("--no-learn", action="store_true", help="keep the model frozen (do not learn from clicks)")
+    ap.add_argument("--demo", action="store_true",
+                    help="show a friend: fresh calibration, gaze ring on, nothing is saved to disk")
     ap.add_argument("--warp-key", choices=sorted(WARP_KEYS), default=DEFAULT_WARP_KEY,
                     help="the modifier to tap (alone) to jump the cursor to your gaze")
     args = ap.parse_args()
@@ -97,19 +152,41 @@ def main() -> int:
         print(PERMISSION_HELP)
         return 1
     cfg = ScreenConfig.from_system()
+    demo = args.demo
+    persist = not demo                      # a demo never writes anything about the face to disk
+    show_dot = args.show_dot or demo
+    learn = not args.no_learn
+    for sig in (signal.SIGHUP, signal.SIGTERM):
+        signal.signal(sig, stop_on_signal)
     with Camera() as cam, FaceTracker() as tracker:
-        fit = calibrate(cam, tracker, cfg)
-        if fit is None:
-            return 0
+        saved, why = (None, "--fresh") if (args.fresh or demo or not learn) else resume.load(QUICK_DIR, cfg)
         names = tuple(tracker.blendshape_names)
-        ref = Reference.from_current(fit.posture)
-        session = CursorSession(cfg, fit.model, fit.x, ref.center, fit.path.name)
+        if saved is not None:
+            ref_center, resumed = saved.ref_center, ago(saved.age_h())
+            session = CursorSession(cfg, saved.model, saved.x_train, ref_center, saved.calib, learn=True,
+                                    resumed=resumed, calibrated_at=saved.calibrated_at)
+            print(f"Reusing your calibration from {resumed} ({saved.model.n_updates} clicks learned so far). "
+                  f"Cmd+Option+R recalibrates; --fresh always starts with the dots.")
+        else:
+            if why not in ("--fresh", "no earlier calibration"):
+                print(f"Calibrating again: {why}.")
+            fit = calibrate(cam, tracker, cfg) if persist else calibrate(cam, tracker, cfg, record=False)
+            if fit is None:
+                return 0
+            ref_center = Reference.from_current(fit.posture).center
+            session = CursorSession(cfg, learner(fit, learn), fit.x, ref_center, fit.path.name, learn=learn)
+            if persist:
+                remember(session, cfg)
+        if demo:
+            session.banner = "DEMO: nothing is saved"
+        ref = SimpleNamespace(center=ref_center)
         print("Cursor mode on: tap Right Command to jump to your gaze; Cmd+Option+G on/off, "
               "Cmd+Option+R recalibrate, Cmd+Option+X quit.")
         cursor = MacCursor((cfg.width_px, cfg.height_px), HotkeyDetector(args.warp_key))
         try:
             with ClickThroughOverlay(cfg) as overlay:
                 last_lines = None
+                next_save = time.monotonic() + AUTOSAVE_S
                 while True:
                     frame = cam.read()
                     result = tracker.process(frame) if frame is not None else None
@@ -123,17 +200,23 @@ def main() -> int:
                             break
                     if action == "quit":
                         break
+                    if persist and time.monotonic() > next_save:
+                        session.save(QUICK_DIR)
+                        remember(session, cfg)
+                        next_save = time.monotonic() + AUTOSAVE_S
                     if action == "recalibrate":
-                        new = calibrate(cam, tracker, cfg)
+                        new = calibrate(cam, tracker, cfg) if persist else calibrate(cam, tracker, cfg, record=False)
                         overlay.restore_policy()
                         if new is not None:
                             ref = Reference.from_current(new.posture)
-                            session.recalibrated(new.model, new.x, ref.center, new.path.name)
+                            session.recalibrated(learner(new, learn), new.x, ref.center, new.path.name)
+                            if persist:
+                                remember(session, cfg)
                         last_lines = None
                         continue
                     lines = session.status_lines()
-                    if args.show_dot or lines != last_lines:   # redraw only when something changed
-                        draw(overlay, session, args.show_dot)
+                    if show_dot or lines != last_lines:   # redraw only when something changed
+                        draw(overlay, session, show_dot)
                         last_lines = lines
                     else:
                         overlay.pump()
@@ -141,7 +224,11 @@ def main() -> int:
             pass
         finally:
             cursor.close()
-            finish(session)
+            if persist:
+                remember(session, cfg)
+                finish(session)
+            else:
+                print("Demo ended: nothing was saved.")
     return 0
 
 

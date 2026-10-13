@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-LAUNCHERS = ("Calibrate.command", "Run.command", "Practice.command", "Cursor.command")
+LAUNCHERS = ("Calibrate.command", "Run.command", "Practice.command", "Cursor.command", "Demo.command")
 
 
 @pytest.mark.parametrize("name", LAUNCHERS)
@@ -56,3 +56,7 @@ def test_two_canvases_can_be_opened_one_after_the_other_in_one_process() -> None
 
 def test_cursor_launcher_starts_cursor_mode() -> None:
     assert "scripts/cursor_mode.py" in (ROOT / "Cursor.command").read_text()
+
+
+def test_demo_launcher_starts_the_nothing_saved_demo() -> None:
+    assert "scripts/cursor_mode.py --demo" in (ROOT / "Demo.command").read_text()

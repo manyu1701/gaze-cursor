@@ -89,9 +89,11 @@ def start_screen(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanvas, me
 
 
 def quick_calibration(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanvas,
-                      cfg: ScreenConfig, note: str = "quick calibration (Run)") -> QuickFit | Path | None:
+                      cfg: ScreenConfig, note: str = "quick calibration (Run)",
+                      record: bool = True) -> QuickFit | Path | None:
     """Show the 9 dots and record them. Returns the fit; the saved path alone if a dot had too few
-    frames; None if aborted. Saves the recording to data/quick/ (record and replay)."""
+    frames; None if aborted. Saves the recording to data/quick/ (record and replay), unless
+    ``record`` is False (demo for a friend: nothing about their face is written to disk)."""
     seed = int(time.time()) % 2**31
     targets = quick_targets(cfg, seed=seed)
     rec = SessionRecorder(meta={
@@ -130,7 +132,7 @@ def quick_calibration(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanva
     rec.meta["blendshape_names"] = list(tracker.blendshape_names)
     if light:
         rec.meta["lighting"] = {k: float(np.mean([s[k] for s in light])) for k in ("face", "background", "ratio")}
-    path = rec.save(QUICK_DIR)
+    path = rec.save(QUICK_DIR) if record else Path("demo (not saved)")
     x, y, idx_a = np.array(xs), np.array(ys, float), np.array(idx)
     if len(x) == 0 or missing_dots(idx_a, targets):
         return path
@@ -139,14 +141,14 @@ def quick_calibration(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanva
 
 
 def calibrate_here(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanvas, cfg: ScreenConfig,
-                   note: str = "quick calibration (Run)") -> QuickFit | str | None:
+                   note: str = "quick calibration (Run)", record: bool = True) -> QuickFit | str | None:
     """Start screen + quick calibration, repeated until it succeeds. None = quit; 'latest' = L."""
     message = ""
     while True:
         choice = start_screen(cam, tracker, canvas, message)
         if choice != "quick":
             return None if choice == "quit" else "latest"
-        out = quick_calibration(cam, tracker, canvas, cfg, note)
+        out = quick_calibration(cam, tracker, canvas, cfg, note, record)
         if out is None:
             message = "calibration aborted"
             continue
@@ -156,7 +158,7 @@ def calibrate_here(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanvas, 
             continue
         report = out.report
         print(f"quick calibration: {QUICK_CONFIG} on {report['dots']} dots, {len(out.x)} frames, fit on its own "
-              f"dots {report['mean_deg']:.1f} deg (worst {report['worst_deg']:.1f}); saved {out.path.name}")
+              f"dots {report['mean_deg']:.1f} deg (worst {report['worst_deg']:.1f}); file: {out.path.name}")
         if report["mean_deg"] > REDO_MEAN_DEG:
             message = (f"the calibration fitted poorly ({report['mean_deg']:.1f} deg on its own dots): look "
                        f"straight at each dot's centre; SPACE to redo")
