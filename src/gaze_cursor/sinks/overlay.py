@@ -221,3 +221,75 @@ class FullscreenCanvas:
         self._pump()
         keys = type(self._window).keys
         return keys.pop(0) if keys else -1
+
+
+class ClickThroughOverlay:
+    """Transparent fullscreen layer for Cursor mode: drawn above normal windows, never takes focus,
+    never receives the mouse (every click goes to the app underneath), leaves the system cursor alone.
+    Draw on ``blank()`` (BGRA, alpha 0 = see-through) and pass it to ``show``."""
+
+    def __init__(self, cfg: ScreenConfig) -> None:
+        self.cfg = cfg
+        self.size = (cfg.width_px, cfg.height_px)
+        self._window = None
+        self._app = None
+
+    def __enter__(self) -> ClickThroughOverlay:
+        import AppKit
+
+        self._app = AppKit.NSApplication.sharedApplication()
+        self._app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)  # no Dock icon, no focus
+        screen = AppKit.NSScreen.mainScreen().frame()
+        win = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            screen, AppKit.NSWindowStyleMaskBorderless, AppKit.NSBackingStoreBuffered, False)
+        win.setLevel_(AppKit.NSStatusWindowLevel)
+        win.setOpaque_(False)
+        win.setBackgroundColor_(AppKit.NSColor.clearColor())
+        win.setHasShadow_(False)
+        win.setIgnoresMouseEvents_(True)
+        win.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces
+                                   | AppKit.NSWindowCollectionBehaviorStationary
+                                   | AppKit.NSWindowCollectionBehaviorIgnoresCycle)
+        win.contentView().setWantsLayer_(True)
+        win.orderFrontRegardless()
+        self._window = win
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._window is not None:
+            self._window.orderOut_(None)
+            self._window.close()
+            self._window = None
+        self.pump()
+
+    @property
+    def safe_top(self) -> int:
+        return int(self.cfg.top_inset_pt) + 14
+
+    def blank(self) -> np.ndarray:
+        return np.zeros((self.size[1], self.size[0], 4), np.uint8)
+
+    def pump(self) -> None:
+        import AppKit
+
+        while True:
+            event = self._app.nextEventMatchingMask_untilDate_inMode_dequeue_(
+                AppKit.NSEventMaskAny, None, AppKit.NSDefaultRunLoopMode, True)
+            if event is None:
+                return
+            self._app.sendEvent_(event)
+
+    def show(self, bgra: np.ndarray) -> None:
+        import Quartz
+
+        rgba = cv2.cvtColor(bgra, cv2.COLOR_BGRA2RGBA)
+        a = rgba[..., 3:4].astype(np.uint16)
+        rgba[..., :3] = (rgba[..., :3].astype(np.uint16) * a // 255).astype(np.uint8)  # premultiplied alpha
+        rgba = np.ascontiguousarray(rgba)
+        h, w = rgba.shape[:2]
+        provider = Quartz.CGDataProviderCreateWithData(None, rgba.tobytes(), rgba.nbytes, None)
+        image = Quartz.CGImageCreate(
+            w, h, 8, 32, w * 4, Quartz.CGColorSpaceCreateDeviceRGB(),
+            Quartz.kCGImageAlphaPremultipliedLast, provider, None, False, Quartz.kCGRenderingIntentDefault)
+        self._window.contentView().layer().setContents_(image)
+        self.pump()

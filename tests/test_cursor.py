@@ -1,4 +1,9 @@
-"""Hotkey logic, clamping and event timing of the Cursor-mode input layer (no OS calls)."""
+"""Hotkey logic, clamping and event timing of the Cursor-mode input layer (no OS calls), and the
+click-through overlay window."""
+
+import os
+
+import pytest
 
 from gaze_cursor.sinks.cursor import (
     FLAG_CONTROL, FLAG_OPTION, KEY_G, KEY_Q, RIGHT_OPTION_KEYCODE, HotkeyDetector, clamp, event_time_ms)
@@ -48,3 +53,13 @@ def test_event_time_uses_the_event_stamp_only_when_plausible() -> None:
     assert event_time_ms(9_950_000_000, 10_000.0) == 9_950.0            # 50 ms before the callback
     assert event_time_ms(0, 10_000.0) == 10_000.0                       # missing stamp
     assert event_time_ms(20_000_000_000, 10_000.0) == 10_000.0          # in the future: other clock
+
+
+@pytest.mark.skipif(os.environ.get("CI") is not None, reason="opens a (transparent) window on a real display")
+def test_the_cursor_overlay_never_takes_the_mouse_or_focus() -> None:
+    from gaze_cursor.config import ScreenConfig
+    from gaze_cursor.sinks.overlay import ClickThroughOverlay
+
+    with ClickThroughOverlay(ScreenConfig()) as o:
+        o.show(o.blank())
+        assert o._window.ignoresMouseEvents() and not o._window.isOpaque() and not o._window.isKeyWindow()
