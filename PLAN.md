@@ -3,6 +3,15 @@
 Core technology first; application direction decided after M3.
 Each milestone ends with a clear "done when" check. Don't start the next until it passes.
 
+## Checkpoints: when to stop and plan (agreed 2026-10-13)
+Within a written step, work goes ahead without asking. **Stop, report plainly (where we are, what the numbers say, what next) and agree the next steps with Abhimanyu** at any of these checkpoints:
+1. **A milestone's done-when is reached**: Abhimanyu confirms it before the next milestone starts.
+2. **A decision gate resolves** (pre-registered test or pre-written rule) and the result changes the route.
+3. **New data is needed**: a recording or live test only Abhimanyu can do at the camera.
+4. **The written plan runs out**, or the next step needs a design choice the plan does not make (then propose the steps, with a recommendation).
+5. **Before anything hard to undo or outward-facing**: merging into `main`, deleting branches or data, sending data off the machine.
+Between checkpoints: commit as work goes, keep PROGRESS.md current, and do not build ahead of the current step.
+
 ## M0: See the face (one evening)
 
 - Project scaffold with uv, Python 3.12, `.gitignore`, layout from `CLAUDE.md`.
