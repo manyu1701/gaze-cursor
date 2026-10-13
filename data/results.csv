@@ -42,3 +42,26 @@ time,mode,confirmatory,config,session,model,features_set,alpha,n_sessions,n_targ
 2026-10-13T04:05:16,losos,1,gaze_a100,,ridge,gaze,100,3,75,2278,,,330.7033,291.9892,573.6642,6.5369,6.1896,5.4941,10.6976,62.2384,1.1746,5.4357,6.9998,preregistered
 2026-10-13T04:05:16,losos,1,gaze_blend_a10,,ridge,gaze_blend,10,3,75,2278,,,336.8462,274.1505,598.6249,6.6583,6.2901,5.1606,11.1464,91.7418,1.7312,5.4507,7.2136,preregistered
 2026-10-13T04:05:16,losos,1,gaze_a10 - gaze_blend_a100,,,,,3,75,,,,,,,,0.1201,,,,,-0.4324,0.6713,preregistered H1 NOT SUPPORTED; d_z=0.05; 2/3 sessions
+2026-10-13T05:13:18,h2_cross_lighting,1,gaze_a10: err(other) - err(same),,,,,2,50,,,,,,,,2.4174,,,,,1.4294,3.4083,preregistered round 2 H2 SUPPORTED
+2026-10-13T05:13:18,h3_within,1,gaze_a10: err(below gate) - err(gated),,,,,4,36,,,,,,,,4.0843,,,,,2.8284,5.3752,preregistered round 2 H3 SUPPORTED
+2026-10-13T05:47:53,positions_A,0,gaze_a10,,ridge,gaze,10,6,150,,,,,,,,5.4824,,,,,5.0631,5.9294,"leave-one-position-out on set A; C 4.30, N 5.36, R 5.33, L 5.29, Rt 6.54, Lo 6.08"
+2026-10-13T05:47:53,positions_A,0,head_a1,,ridge,head,1,6,150,,,,,,,,16.9390,,,,,14.6736,19.3017,"leave-one-position-out on set A; C 17.51, N 47.84, R 6.20, L 9.00, Rt 12.24, Lo 8.84"
+2026-10-13T05:47:53,positions_A,0,head_a10,,ridge,head,10,6,150,,,,,,,,13.3883,,,,,11.5986,15.2475,"leave-one-position-out on set A; C 8.96, N 38.13, R 5.60, L 7.82, Rt 12.61, Lo 7.21"
+2026-10-13T05:47:53,positions_A,0,head_a100,,ridge,head,100,6,150,,,,,,,,7.8330,,,,,7.0864,8.5860,"leave-one-position-out on set A; C 4.33, N 14.25, R 4.97, L 5.41, Rt 12.86, Lo 5.17"
+2026-10-13T05:47:53,positions_A,0,ray_a1,,ridge,ray,1,6,150,,,,,,,,13.8705,,,,,11.5140,16.3388,"leave-one-position-out on set A; C 12.06, N 46.85, R 4.52, L 6.78, Rt 8.15, Lo 4.86"
+2026-10-13T05:47:53,positions_A,0,ray_a10,,ridge,ray,10,6,150,,,,,,,,11.9547,,,,,10.1029,13.9040,"leave-one-position-out on set A; C 9.65, N 37.86, R 4.52, L 6.55, Rt 8.22, Lo 4.93"
+2026-10-13T05:47:53,positions_A,0,ray_a100,,ridge,ray,100,6,150,,,,,,,,6.9709,,,,,6.3783,7.5654,"leave-one-position-out on set A; C 5.37, N 12.86, R 4.63, L 5.36, Rt 8.30, Lo 5.31"
+2026-10-13T05:50:42,positions_A,0,gaze_a10,,ridge,gaze,10,6,150,,,,,,,,5.4824,,,,,5.0631,5.9294,"leave-one-position-out on set A; C 4.30, N 5.36, R 5.33, L 5.29, Rt 6.54, Lo 6.08"
+2026-10-13T05:50:42,positions_A,0,gaze_a100,,ridge,gaze,100,6,150,,,,,,,,5.3681,,,,,4.9523,5.8024,"leave-one-position-out on set A; C 4.33, N 5.25, R 5.40, L 5.17, Rt 6.05, Lo 6.01"
+2026-10-13T05:50:42,positions_A,0,head_a100,,ridge,head,100,6,150,,,,,,,,7.8330,,,,,7.0864,8.5860,"leave-one-position-out on set A; C 4.33, N 14.25, R 4.97, L 5.41, Rt 12.86, Lo 5.17"
+2026-10-13T05:50:42,positions_A,0,ray_a100,,ridge,ray,100,6,150,,,,,,,,6.9709,,,,,6.3783,7.5654,"leave-one-position-out on set A; C 5.37, N 12.86, R 4.63, L 5.36, Rt 8.30, Lo 5.31"
+2026-10-13T05:50:42,positions_A,0,geo_a1,,geo,geo,1,6,150,,,,,,,,17.3058,,,,,15.6498,18.9855,"leave-one-position-out on set A; C 12.56, N 35.58, R 5.50, L 13.94, Rt 25.35, Lo 10.91"
+2026-10-13T05:50:42,positions_A,0,geo_a10,,geo,geo,10,6,150,,,,,,,,17.3058,,,,,15.6498,18.9854,"leave-one-position-out on set A; C 12.56, N 35.58, R 5.50, L 13.94, Rt 25.35, Lo 10.91"
+2026-10-13T05:50:42,positions_A,0,geo_a100,,geo,geo,100,6,150,,,,,,,,17.3055,,,,,15.6495,18.9852,"leave-one-position-out on set A; C 12.56, N 35.58, R 5.50, L 13.94, Rt 25.35, Lo 10.91"
+2026-10-13T05:54:41,positions_A,0,gaze_a10,,ridge,gaze,10,6,150,,,,,,,,5.4824,,,,,5.0631,5.9294,"leave-one-position-out on set A; C 4.30, N 5.36, R 5.33, L 5.29, Rt 6.54, Lo 6.08"
+2026-10-13T05:54:41,positions_A,0,gaze_a100,,ridge,gaze,100,6,150,,,,,,,,5.3681,,,,,4.9523,5.8024,"leave-one-position-out on set A; C 4.33, N 5.25, R 5.40, L 5.17, Rt 6.05, Lo 6.01"
+2026-10-13T05:54:41,positions_A,0,head_a100,,ridge,head,100,6,150,,,,,,,,7.8330,,,,,7.0864,8.5860,"leave-one-position-out on set A; C 4.33, N 14.25, R 4.97, L 5.41, Rt 12.86, Lo 5.17"
+2026-10-13T05:54:41,positions_A,0,ray_a100,,ridge,ray,100,6,150,,,,,,,,6.9709,,,,,6.3783,7.5654,"leave-one-position-out on set A; C 5.37, N 12.86, R 4.63, L 5.36, Rt 8.30, Lo 5.31"
+2026-10-13T05:54:41,positions_A,0,geo_a1,,geo,geo,1,6,150,,,,,,,,17.3058,,,,,15.6498,18.9855,"leave-one-position-out on set A; C 12.56, N 35.58, R 5.50, L 13.94, Rt 25.35, Lo 10.91"
+2026-10-13T05:54:41,positions_A,0,geo_a10,,geo,geo,10,6,150,,,,,,,,17.3058,,,,,15.6498,18.9854,"leave-one-position-out on set A; C 12.56, N 35.58, R 5.50, L 13.94, Rt 25.35, Lo 10.91"
+2026-10-13T05:54:41,positions_A,0,geo_a100,,geo,geo,100,6,150,,,,,,,,17.3055,,,,,15.6495,18.9852,"leave-one-position-out on set A; C 12.56, N 35.58, R 5.50, L 13.94, Rt 25.35, Lo 10.91"
