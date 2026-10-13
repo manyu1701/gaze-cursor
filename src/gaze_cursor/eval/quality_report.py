@@ -123,12 +123,13 @@ def grade(m: dict) -> list[CheckResult]:
              NA if _isnan(f("late_minus_early_deg")) else INFO, "printed, not scored"),
     ]))
     tags_present, tags_expected = f("tags_present"), f("tags_expected")
+    tags_level = str(m.get("tags_verdict") or (PASS if tags_present >= tags_expected else WARN))
+    tags_note = str(m.get("tags_issues") or "") or "person_id missing fails a new session, other gaps warn"
     out.append(CheckResult(6, TITLES[6], [
         Line("face brightness (0-255)", f("face_brightness"), band_min(f("face_brightness"), T["face_brightness"]),
              "existing gate: 60 minimum, 100 recommended"),
         Line("lighting label", str(m["lighting_label"]) or "(none)", NA),
-        Line("condition tags present", f"{int(tags_present)}/{int(tags_expected)}",
-             PASS if tags_present >= tags_expected else WARN, "never a fail"),
+        Line("condition tags present", f"{int(tags_present)}/{int(tags_expected)}", tags_level, tags_note),
     ]))
     return out
 

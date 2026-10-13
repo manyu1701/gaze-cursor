@@ -7,8 +7,9 @@ Thresholds are written in PLAN.md (M3 step 6b) and live in ``eval/quality_report
     uv run scripts/session_report.py data/sessions/session_20261013_133547.npz
     uv run scripts/session_report.py --latest [--no-log] [--out-dir DIR]
 
-Refuses Cursor-mode logs (``cursor_*.npz``) and Cursor-mode calibrations: round 4 was frozen
-without this report and stays unreported until the H6 test has run (PREREGISTRATIONS.md).
+Cursor-mode logs (``cursor_*.npz``) and Cursor-mode calibrations get the tag-only check (their
+condition tags, read from ``meta`` alone): no error or accuracy number is computed for them, because
+round 4 was frozen without this report (PREREGISTRATIONS.md) and its classification stays untouched.
 """
 
 from __future__ import annotations
@@ -20,7 +21,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from gaze_cursor.eval.quality import FIT_CONFIG, all_metrics, held_out_stats, refusal, screen_of
+from gaze_cursor.conditions import conditions_block, read_meta, validate, verdict
+from gaze_cursor.eval.quality import FIT_CONFIG, all_metrics, held_out_stats, is_cursor_mode, refusal, screen_of
 from gaze_cursor.eval.quality_report import FAIL, PASS, WARN, CheckResult, format_report, grade, overall
 from gaze_cursor.eval.results_log import RESULTS, append_rows, now
 from gaze_cursor.eval.session import Session, latest_session, load_session
@@ -32,8 +34,6 @@ COLOUR = {PASS: (80, 170, 60), WARN: (30, 160, 230), FAIL: (60, 60, 220)}   # BG
 
 def refuse_path(path: Path) -> str | None:
     """A reason this file must not be reported on, judged from its name alone."""
-    if path.name.startswith("cursor_"):
-        return "Cursor-mode log: round-4 data, not reported until H6 has run"
     if path.name.endswith(".faces.npz"):
         return "face-image sidecar, not a session"
     return None
@@ -91,13 +91,30 @@ def summary_row(s: Session, m: dict, results: list[CheckResult]) -> dict:
     }
 
 
+def tag_report(name: str, meta: dict, npz: Path | None) -> int:
+    """Tag-only check: the condition-tag verdict from ``meta`` (and a backfilled sidecar); no metrics.
+
+    Used for Cursor-mode logs and calibrations. Always returns 0: the verdict is printed, never an exit code.
+    """
+    issues = validate(conditions_block(meta, npz))
+    print(f"Tag-only check (Cursor-mode data; no accuracy numbers): {name}")
+    print(f"CONDITION TAGS: {verdict(issues).upper()}")
+    for i in issues:
+        print(f"  {i.severity:4}  {i.field}: {i.message}")
+    return 0
+
+
 def run(path: Path, out_dir: Path | None, results_csv: Path | None) -> int:
-    """Report on one session. Returns 0 on success, 2 if the session was refused."""
+    """Report on one session. Returns 0 on success (Cursor-mode data: tag-only), 2 if the session was refused."""
     why = refuse_path(path)
     if why:
         print(f"REFUSED {path.name}: {why}", file=sys.stderr)
         return 2
+    if path.name.startswith("cursor_"):
+        return tag_report(path.name, read_meta(path), path)
     s = load_session(path)
+    if is_cursor_mode(s):
+        return tag_report(path.name, s.meta, path)
     why = refusal(s)
     if why:
         print(f"REFUSED {path.name}: {why}", file=sys.stderr)

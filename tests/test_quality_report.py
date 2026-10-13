@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -36,7 +37,7 @@ def good() -> dict:
         "bias_deg": 2.0, "spread_deg": 1.0, "bias_share": 0.8, "slope_x": 0.95, "slope_y": 0.8,
         "head_shift_cm": 0.4, "head_rot_deg": 1.2, "late_minus_early_deg": 0.1,
         "face_brightness": 120.0, "lighting_ratio": 1.4, "lighting_label": "front-lit",
-        "tags_present": 5.0, "tags_expected": 5.0,
+        "tags_present": 9.0, "tags_expected": 9.0, "tags_verdict": "pass", "tags_issues": "",
     }
 
 
@@ -69,9 +70,15 @@ def test_check_four_never_fails():
     assert level(grade(m), 4) == WARN
 
 
-def test_missing_tags_warn_but_never_fail():
-    r = grade(good() | {"tags_present": 0.0})
-    assert level(r, 6) == WARN
+def test_check_six_follows_the_tag_validator_verdict():
+    assert level(grade(good() | {"tags_verdict": "warn", "tags_present": 5.0}), 6) == WARN
+    r = grade(good() | {"tags_verdict": "fail", "tags_present": 8.0, "tags_issues": "person_id: person_id missing"})
+    assert level(r, 6) == FAIL and overall(r) == FAIL
+    assert "person_id missing" in format_report("x.npz", r)
+
+
+def test_old_metrics_without_a_verdict_still_warn_not_fail():
+    assert level(grade({k: v for k, v in good().items() if k != "tags_verdict"} | {"tags_present": 0.0}), 6) == WARN
 
 
 def test_quick_session_nans_are_not_scored():
@@ -102,13 +109,27 @@ def test_report_on_a_synthetic_session_runs_end_to_end():
     assert level(r, 6) == WARN            # no condition tags; brightness absent is n/a, not a fail
 
 
-def test_script_refuses_cursor_logs_and_sidecars_by_name(tmp_path, capsys):
+def test_script_refuses_face_sidecars_by_name_but_cursor_logs_get_the_tag_check(tmp_path, capsys):
     sr = _load_script()
-    for name in ("cursor_20261013_234559.npz", "session_20261013_133547.faces.npz"):
-        assert sr.refuse_path(Path(name)) is not None
-        assert sr.run(tmp_path / name, None, None) == 2          # refused before the file is even opened
-    assert sr.refuse_path(Path("session_20261013_133547.npz")) is None
+    faces = "session_20261013_133547.faces.npz"
+    assert sr.refuse_path(Path(faces)) is not None
+    assert sr.run(tmp_path / faces, None, None) == 2             # refused before the file is even opened
     assert "REFUSED" in capsys.readouterr().err
+    assert sr.refuse_path(Path("session_20261013_133547.npz")) is None
+    assert sr.refuse_path(Path("cursor_20261013_234559.npz")) is None      # tag-only, see below
+
+
+def test_cursor_log_gets_only_the_tag_check_and_no_row(tmp_path, monkeypatch, capsys):
+    sr = _load_script()
+    log = tmp_path / "cursor_20261013_234559.npz"
+    np.savez(log, meta=json.dumps({"kind": "cursor_session"}), frames=np.zeros((2, 2)))
+    monkeypatch.setattr(sr, "load_session", lambda p: pytest.fail("a Cursor log was loaded as a session"))
+    monkeypatch.setattr(sr, "all_metrics", lambda s: pytest.fail("metrics computed for Cursor-mode data"))
+    csv_path = tmp_path / "r.csv"
+    assert sr.run(log, None, csv_path) == 0
+    out = capsys.readouterr().out
+    assert "Tag-only check" in out and "CONDITION TAGS: WARN" in out
+    assert not csv_path.exists() and not (tmp_path / "cursor_20261013_234559.report.png").exists()
 
 
 def test_script_refuses_cursor_mode_calibration_by_note():
@@ -187,16 +208,16 @@ def test_info_lines_never_change_a_verdict():
     assert level(r, 5) == PASS and level(r, 4) == PASS
 
 
-def test_run_refuses_cursor_calibration_before_computing_any_metric(tmp_path, monkeypatch, capsys):
+def test_run_checks_only_tags_of_a_cursor_calibration_before_computing_any_metric(tmp_path, monkeypatch, capsys):
     sr = _load_script()
     s = fake_session(0)
     monkeypatch.setattr(sr, "load_session", lambda p: replace(s, meta={**s.meta, "note": "quick calibration (Cursor)"}))
-    monkeypatch.setattr(sr, "all_metrics", lambda s: pytest.fail("metrics computed for a refused session"))
-    assert sr.run(tmp_path / "session_20261014_000000.npz", None, tmp_path / "r.csv") == 2
-    assert not (tmp_path / "r.csv").exists() and "REFUSED" in capsys.readouterr().err
+    monkeypatch.setattr(sr, "all_metrics", lambda s: pytest.fail("metrics computed for Cursor-mode data"))
+    assert sr.run(tmp_path / "session_20261014_000000.npz", None, tmp_path / "r.csv") == 0
+    assert not (tmp_path / "r.csv").exists() and "Tag-only check" in capsys.readouterr().out
     # a renamed Cursor log is caught by its recorded kind
     monkeypatch.setattr(sr, "load_session", lambda p: replace(s, meta={**s.meta, "kind": "cursor_session"}))
-    assert sr.run(tmp_path / "session_renamed.npz", None, None) == 2
+    assert sr.run(tmp_path / "session_renamed.npz", None, None) == 0
 
 
 def test_run_appends_exactly_one_row_and_no_log_appends_none(tmp_path, monkeypatch):
@@ -210,3 +231,14 @@ def test_run_appends_exactly_one_row_and_no_log_appends_none(tmp_path, monkeypat
     other = tmp_path / "none.csv"
     assert sr.run(tmp_path / "session_y.npz", tmp_path, None) == 0
     assert not other.exists()
+
+
+def test_tag_report_reads_a_sidecar_next_to_a_cursor_log(tmp_path, capsys):
+    from gaze_cursor.conditions import sidecar_path
+    sr = _load_script()
+    log = tmp_path / "cursor_20261014_011059.npz"
+    np.savez(log, meta=json.dumps({"kind": "cursor_session"}))
+    sidecar_path(log).write_text(json.dumps({"person_id": "p01", "backfilled": True}))
+    assert sr.run(log, None, None) == 0
+    out = capsys.readouterr().out
+    assert "CONDITION TAGS: WARN" in out and "person_id" not in out.split("CONDITION TAGS")[1]

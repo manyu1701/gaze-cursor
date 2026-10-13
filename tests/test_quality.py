@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import json
+
 import numpy as np
 
+from gaze_cursor.conditions import build_conditions, sidecar_path
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.eval.configs import REGISTRY
 from gaze_cursor.eval.quality import (
@@ -115,7 +118,7 @@ def test_held_out_never_splits_a_target_between_train_and_test():
 def test_quick_style_session_has_no_heldout_but_has_loto():
     m = all_metrics(fake_session(0, n_calib=9, n_test=0, frames=8))
     assert np.isnan(m["heldout_mean"]) and np.isfinite(m["loto_mean"])
-    assert m["tags_present"] == 0.0 and m["tags_expected"] == 5.0
+    assert m["tags_present"] == 0.0 and m["tags_expected"] == 9.0 and m["tags_verdict"] == "warn"
 
 
 def test_rotation_angle():
@@ -146,13 +149,32 @@ def test_within_fit_trains_on_calibration_frames_only():
     assert within is not None and within.err_px.mean() > 100
 
 
-def test_conditions_reads_lighting_and_tags():
+def test_conditions_reads_lighting_and_the_conditions_block():
     s = fake_session(0)
     bare = all_metrics(s)
-    assert np.isnan(bare["face_brightness"]) and bare["tags_present"] == 0.0
-    meta = {**s.meta, "lighting": {"face": 123.0, "ratio": 1.4, "label": "front-lit"},
-            "camera": "built-in", "glasses": False, "person_id": "p01"}
+    assert np.isnan(bare["face_brightness"]) and bare["tags_present"] == 0.0 and bare["tags_verdict"] == "warn"
+    full = build_conditions(
+        person_id="p01", camera={"name": "FaceTime HD Camera", "width": 1280, "height": 720},
+        screen_layout={"displays": [{"w_pt": 1470}]}, assumed_distance_cm=60.0, iris_px=19.6, image_width=1280,
+        lighting_tag="lamp", glasses="no", posture_note="upright", git_hash="abc1234")
+    meta = {**s.meta, "lighting": {"face": 123.0, "ratio": 1.4, "label": "front-lit"}, "conditions": full}
     tagged = all_metrics(replace(s, meta=meta))
     assert tagged["face_brightness"] == 123.0 and tagged["lighting_label"] == "front-lit"
-    assert tagged["tags_present"] == 3.0   # glasses=False still counts as present; "" / None do not
+    assert tagged["tags_present"] == 9.0 and tagged["tags_verdict"] == "pass" and tagged["tags_issues"] == ""
+    # a new-format session without a person id fails; a backfilled one only warns
+    nameless = {**meta, "conditions": {**full, "person_id": ""}}
+    assert all_metrics(replace(s, meta=nameless))["tags_verdict"] == "fail"
+    old = {**meta, "conditions": {**full, "person_id": "", "backfilled": True}}
+    assert all_metrics(replace(s, meta=old))["tags_verdict"] == "warn"
+
+
+def test_conditions_fall_back_to_a_backfilled_sidecar(tmp_path):
+    npz = tmp_path / "session_20261013_133547.npz"
+    sidecar_path(npz).write_text(json.dumps({"backfilled": True, "person_id": "p01"}))
+    s = replace(fake_session(0), path=npz)
+    m = all_metrics(s)
+    assert m["tags_verdict"] == "warn" and "person_id" not in m["tags_issues"]
+
+
+def test_phase_constants_are_pinned():
     assert (CALIB, TEST) == (0, 1)

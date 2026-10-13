@@ -128,3 +128,34 @@ def test_person_id_resolution_order_and_persistence(tmp_path) -> None:
     assert resolve_person_id("  ", {"GAZE_PERSON_ID": ""}, path) == "p07"           # blanks are ignored
     path.write_text("not json")
     assert resolve_person_id(None, {}, path) is None
+
+
+def test_legacy_detection_edge_cases_never_fail() -> None:
+    nameless = {k: v for k, v in _block(person_id="").items()}
+    assert verdict(validate(nameless)) == FAIL                                   # the control: a real v1 session
+    for version in (0, -1, True, "1", 1.0, None):
+        assert verdict(validate({**nameless, "schema_version": version})) == WARN, version
+    for backfilled in (True, "false", "False", 0, None):
+        assert verdict(validate({**nameless, "backfilled": backfilled})) == WARN, backfilled
+    no_flag = {k: v for k, v in nameless.items() if k != "backfilled"}
+    assert verdict(validate(no_flag)) == WARN                                    # the writers always set it
+
+
+def test_whitespace_only_person_id_fails_a_new_session() -> None:
+    assert verdict(validate(_block(person_id="   "))) == FAIL
+
+
+def test_sidecar_reading(tmp_path) -> None:
+    from gaze_cursor.conditions import conditions_block, sidecar_path
+    npz = tmp_path / "session_20261013_133547.npz"
+    assert conditions_block({}, npz) is None                                     # no sidecar
+    sidecar_path(npz).write_text("{not json")
+    assert conditions_block({}, npz) is None                                     # corrupt sidecar
+    sidecar_path(npz).write_text(json.dumps({"schema_version": 1, "person_id": ""}))
+    block = conditions_block({}, npz)
+    assert block["backfilled"] is True and verdict(validate(block)) == WARN       # a sidecar can never fail
+    own = _block()
+    assert conditions_block({"conditions": own}, npz) == own                     # the recording's own block wins
+    assert conditions_block({"conditions": {}}, npz)["backfilled"] is True       # an empty block falls through
+    assert conditions_block({"conditions": own}) == own
+    assert conditions_block({}, None) is None

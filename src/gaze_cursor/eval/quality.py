@@ -17,6 +17,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.spatial import Delaunay
 
+from gaze_cursor.conditions import N_CHECKED, conditions_block, tags_present, validate, verdict
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.eval.configs import REGISTRY
 from gaze_cursor.eval.metrics import cm_to_deg, px_to_cm
@@ -26,18 +27,18 @@ from gaze_cursor.eval.stats import TargetStats, per_target
 FIT_CONFIG = "gaze_a10"  # the model Run / Cursor mode use (quick.QUICK_CONFIG)
 OUTLIER_DEG = 8.0        # a target further than this from where it was looked at is an outlier target
 MIN_FRAMES = 10         # same as quick.MIN_DOT_FRAMES: fewer valid frames on a target is a bad target
-CONDITION_TAGS = ("camera", "glasses", "person_id", "distance_cm", "posture_note")  # CLAUDE.md "Generalisation readiness"
 
 
 def refusal(s: Session) -> str | None:
     """Why this session must not be scored by the report, or None.
 
-    Round 4 (PREREGISTRATIONS.md) was frozen without the quality report, so the calibrations that
-    start Cursor-mode sessions (note ``quick calibration (Cursor)``) are not reported on until the
-    H6 test has run. Sessions on a distorted canvas have biased target positions (``is_clean``).
+    Cursor-mode data (note ``quick calibration (Cursor)`` or kind ``cursor_session``) is never scored: round 4
+    (PREREGISTRATIONS.md) was frozen without the quality report, so its classification stays untouched.
+    ``session_report`` checks only the condition tags of such data (``is_cursor_mode``) before it gets here.
+    Sessions on a distorted canvas have biased target positions (``is_clean``).
     """
-    if "(Cursor)" in str(s.meta.get("note", "")) or s.meta.get("kind") == "cursor_session":
-        return "Cursor-mode calibration: round-4 data, not reported until H6 has run"
+    if is_cursor_mode(s):
+        return "Cursor-mode data: round-4 data (frozen without the report); only its condition tags are checked"
     if not s.is_clean:
         return "targets were not drawn 1:1 on the display (unclean window)"
     return None
@@ -196,17 +197,24 @@ def _loto_keys(s: Session) -> np.ndarray:
 
 
 def conditions(s: Session) -> dict[str, float | str]:
-    """Lighting gate inputs and which structured condition tags the session carries."""
+    """Lighting gate inputs and the verdict of the shared condition-tag validator (``gaze_cursor.conditions``)."""
     raw = s.meta.get("lighting")
     light: dict = raw if isinstance(raw, dict) else {}
-    out: dict[str, float | str] = {
+    issues = validate(conditions_block(s.meta, s.path))
+    return {
         "face_brightness": float(light.get("face", float("nan"))),
         "lighting_ratio": float(light.get("ratio", float("nan"))),
         "lighting_label": str(light.get("label", "")),
-        "tags_present": float(sum(1 for k in CONDITION_TAGS if s.meta.get(k) not in (None, ""))),
-        "tags_expected": float(len(CONDITION_TAGS)),
+        "tags_present": float(tags_present(issues)),
+        "tags_expected": float(N_CHECKED),
+        "tags_verdict": verdict(issues),
+        "tags_issues": "; ".join(f"{i.field}: {i.message}" for i in issues),
     }
-    return out
+
+
+def is_cursor_mode(s: Session) -> bool:
+    """A Cursor-mode calibration or log: round-4 data, only its condition tags are checked."""
+    return "(Cursor)" in str(s.meta.get("note", "")) or s.meta.get("kind") == "cursor_session"
 
 
 def all_metrics(s: Session) -> dict[str, float | str]:

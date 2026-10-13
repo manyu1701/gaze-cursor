@@ -32,6 +32,8 @@ RIGHT_IRIS_RING = (469, 470, 471, 472)
 LEFT_IRIS_RING = (474, 475, 476, 477)
 
 PASS, WARN, FAIL = "pass", "warn", "fail"
+N_CHECKED = 9    # fields ``validate`` can flag: person_id, camera, camera.resolution, screen_layout, distance,
+                 # lighting_tag, glasses, posture_note, git_hash
 
 
 @dataclass(frozen=True)
@@ -148,14 +150,16 @@ def validate(block: Mapping[str, object] | None) -> list[Issue]:
     """Check a conditions block; empty list = all good.
 
     Severity rule (decided 2026-10-14): a missing ``person_id`` **fails** a session written with
-    ``schema_version >= 1``; everything else that is missing only **warns**. Legacy sessions (no block, no
-    ``schema_version``) and backfilled ones (``backfilled`` true) can never fail: their tags were not
+    ``schema_version >= 1`` and ``backfilled`` exactly ``False`` (what the writers set); everything else that is
+    missing only **warns**. Anything else is treated as legacy and can never fail: no block, a missing, bool,
+    string or < 1 ``schema_version``, or ``backfilled`` true / absent / not a real boolean. Their tags were not
     recorded at the time.
     """
     if not block:
         return [Issue("conditions", WARN, "no conditions block (legacy session)")]
     version = block.get("schema_version")
-    legacy = not isinstance(version, int) or isinstance(version, bool) or bool(block.get("backfilled"))
+    legacy = (not isinstance(version, int) or isinstance(version, bool) or version < 1
+              or block.get("backfilled") is not False)
     issues: list[Issue] = []
 
     def need(field: str, ok: bool, message: str, severity: str = WARN) -> None:
@@ -192,3 +196,37 @@ def verdict(issues: list[Issue]) -> str:
     if any(i.severity == FAIL for i in issues):
         return FAIL
     return WARN if issues else PASS
+
+
+def sidecar_path(npz: Path) -> Path:
+    """Where the backfilled block of ``session_X.npz`` lives: ``session_X.conditions.json`` next to it."""
+    return npz.with_name(npz.stem + ".conditions.json")
+
+
+def read_meta(npz: Path) -> dict:
+    """The ``meta`` dict of a session or Cursor log, read without loading its arrays."""
+    with np.load(npz, allow_pickle=False) as d:
+        return json.loads(str(d["meta"]))
+
+
+def conditions_block(meta: Mapping[str, object], npz: Path | None = None) -> dict | None:
+    """The conditions block of a recording: its own ``meta["conditions"]``, else a backfilled sidecar, else None."""
+    own = meta.get("conditions")
+    if isinstance(own, dict) and own:
+        return own
+    if npz is not None:
+        try:
+            side = json.loads(sidecar_path(npz).read_text())
+        except (OSError, ValueError):
+            return None
+        # a sidecar is a backfill by definition, whatever it says about itself: it can warn, never fail
+        return {**side, "backfilled": True} if isinstance(side, dict) and side else None
+    return None
+
+
+def tags_present(issues: list[Issue]) -> int:
+    """How many of the ``N_CHECKED`` fields are fine (all of them missing for a recording with no block)."""
+    if any(i.field == "conditions" for i in issues):
+        return 0
+    flagged = {i.field for i in issues} - {"schema_version"}
+    return max(0, N_CHECKED - len(flagged))
