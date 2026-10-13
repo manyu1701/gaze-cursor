@@ -51,7 +51,7 @@ def test_cursor_mode_warps_on_the_hotkey_logs_clicks_and_quits(tmp_path, monkeyp
     warps, polls = [], {"n": 0}
 
     class Cursor:
-        def __init__(self, size): self.size = size
+        def __init__(self, size, detector=None): self.size = size
         def poll(self):
             polls["n"] += 1
             out = script.get(polls["n"], [])

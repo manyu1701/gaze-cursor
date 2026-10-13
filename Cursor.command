@@ -1,5 +1,5 @@
 #!/bin/bash
-# Double-click for Cursor mode: tap Right Option and the real cursor jumps to where you look; the
+# Double-click for Cursor mode: tap Right Command and the real cursor jumps to where you look; the
 # trackpad finishes. Starts with a 9-dot quick calibration where you sit (~15 s). Hotkeys work in any
 # app: Ctrl+Option+G on/off, Ctrl+Option+R recalibrate, Ctrl+Option+Q quit.
 # First time: macOS needs Input Monitoring for Terminal (the script explains where).
@@ -9,7 +9,7 @@ if ! command -v uv >/dev/null 2>&1; then
   echo "uv was not found. Install it from https://docs.astral.sh/uv/ and try again."
   read -r -p "Press Enter to close" _; exit 1
 fi
-echo "gaze-cursor: Cursor mode (tap Right Option to jump; Ctrl+Option+Q quits)"
+echo "gaze-cursor: Cursor mode (tap Right Command to jump; Ctrl+Option+Q quits)"
 uv run scripts/cursor_mode.py "$@"
 status=$?
 echo

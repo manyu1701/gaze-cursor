@@ -6,7 +6,8 @@
 - A **listen-only** Quartz event tap reports the hotkeys and every mouse-down without blocking or
   changing any event. It needs **Input Monitoring** permission for the app running Python (Terminal).
 
-Hotkeys (defaults): tap **Right Option** alone = warp to gaze; Ctrl+Option+G = on / off;
+Hotkeys (defaults): tap **Right Command** alone = warp to gaze (Abhimanyu's choice after the first live
+try; Right Option before); Ctrl+Option+G = on / off;
 Ctrl+Option+R = recalibrate (9 quick dots); Ctrl+Option+Q = quit.
 """
 
@@ -16,11 +17,15 @@ import time
 from dataclasses import dataclass
 from typing import Protocol
 
-RIGHT_OPTION_KEYCODE = 61
+RIGHT_OPTION_KEYCODE, RIGHT_COMMAND_KEYCODE = 61, 54
 KEY_G, KEY_Q, KEY_R = 5, 12, 15  # ANSI virtual key codes
-TAP_MAX_MS = 400              # a modifier press longer than this is a hold (e.g. Option-drag), not a tap
+TAP_MAX_MS = 400              # a modifier press longer than this is a hold (e.g. Cmd-drag), not a tap
 FLAG_OPTION = 1 << 19         # kCGEventFlagMaskAlternate
 FLAG_CONTROL = 1 << 18        # kCGEventFlagMaskControl
+FLAG_COMMAND = 1 << 20        # kCGEventFlagMaskCommand
+# Tap-to-warp modifier: its key code and the flag that is set while it is down.
+WARP_KEYS = {"right_command": (RIGHT_COMMAND_KEYCODE, FLAG_COMMAND), "right_option": (RIGHT_OPTION_KEYCODE, FLAG_OPTION)}
+DEFAULT_WARP_KEY = "right_command"
 
 
 @dataclass(frozen=True)
@@ -45,10 +50,10 @@ class HotkeyDetector:
     """Turns raw key / modifier / mouse events into ``InputEvent``s. Pure: no OS calls.
 
     The warp key is a *tap* of a modifier on its own: pressed and released within ``TAP_MAX_MS`` with no
-    other key or click in between (so Option+letter and Option-click keep working as usual)."""
+    other key or click in between (so Cmd+C, Cmd-click etc. keep working as usual)."""
 
-    def __init__(self, warp_keycode: int = RIGHT_OPTION_KEYCODE, tap_max_ms: float = TAP_MAX_MS) -> None:
-        self.warp_keycode = warp_keycode
+    def __init__(self, warp_key: str = DEFAULT_WARP_KEY, tap_max_ms: float = TAP_MAX_MS) -> None:
+        self.warp_keycode, self.warp_flag = WARP_KEYS[warp_key]
         self.tap_max_ms = tap_max_ms
         self._down_at: float | None = None
 
@@ -56,7 +61,7 @@ class HotkeyDetector:
         if keycode != self.warp_keycode:
             self._down_at = None
             return []
-        if flags & FLAG_OPTION and self._down_at is None:      # pressed
+        if flags & self.warp_flag and self._down_at is None:   # pressed
             self._down_at = t_ms
             return []
         start, self._down_at = self._down_at, None              # released
@@ -76,7 +81,7 @@ class HotkeyDetector:
         return []
 
     def mouse_down(self, xy: tuple[float, float], button: str, t_ms: float) -> list[InputEvent]:
-        self._down_at = None                                   # Option-click is not a warp tap
+        self._down_at = None                                   # Cmd-click is not a warp tap
         return [InputEvent("click", t_ms, (float(xy[0]), float(xy[1])), button)]
 
 

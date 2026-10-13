@@ -123,7 +123,7 @@ class CursorSession:
         """(text, level) with level in ok / warn / off."""
         if not self.enabled:
             return [("gaze warp OFF (Ctrl+Option+G)", "off")]
-        lines = [("gaze warp ON: tap Right Option", "ok")]
+        lines = [("gaze warp ON: tap Right Command", "ok")]
         if self.dot is None or self.raw is None:
             lines.append(("face not tracked", "warn"))
         if self.moved():

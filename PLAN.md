@@ -64,7 +64,7 @@ Ordered by what the M1 data says matters most (see PROGRESS.md, "Independent ana
 
 ## M3: Control the real cursor
 
-**Decisions (Abhimanyu, 2026-10-13):** warp = **tap a hotkey** (default Right Option) and the cursor jumps to the gaze point once; the trackpad finishes. **Clicks stay on the trackpad** in the first pass; every click is logged as a labelled gaze sample and drives input-free self-recalibration. Dwell / blink clicking comes later as a measured experiment. Build order: quick-calibration refactor -> cursor + input platform module (listen-only event tap, Accessibility + Input Monitoring) -> click-through status overlay -> `Cursor.command` -> click log -> online RLS + drift (pre-registered before recording) -> head-and-eyes test H + Fitts task.
+**Decisions (Abhimanyu, 2026-10-13):** warp = **tap a hotkey** (Right Command, chosen by Abhimanyu after the first live try; Right Option before) and the cursor jumps to the gaze point once; the trackpad finishes. **Clicks stay on the trackpad** in the first pass; every click is logged as a labelled gaze sample and drives input-free self-recalibration. Dwell / blink clicking comes later as a measured experiment. Build order: quick-calibration refactor -> cursor + input platform module (listen-only event tap, Accessibility + Input Monitoring) -> click-through status overlay -> `Cursor.command` -> click log -> online RLS + drift (pre-registered before recording) -> head-and-eyes test H + Fitts task.
 
 - Cursor sink using Quartz CGEvent (Accessibility permission).
 - Click triggers: dwell, blink, and/or hotkey (compare).

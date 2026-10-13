@@ -1,17 +1,17 @@
-"""Cursor mode (M3): tap Right Option and the real cursor jumps to where you look; the trackpad finishes.
+"""Cursor mode (M3): tap Right Command and the real cursor jumps to where you look; the trackpad finishes.
 
 Starts with the 9-dot quick calibration where you sit (same as Run), then gets out of the way: a
 transparent status chip in the top-right corner, every app keeps working, clicks go through. The cursor
 only ever moves when you tap the hotkey, and not when the tracker cannot see your eyes.
 
-Hotkeys (work in any app): tap Right Option = jump to gaze; Ctrl+Option+G = on / off;
+Hotkeys (work in any app): tap Right Command = jump to gaze; Ctrl+Option+G = on / off;
 Ctrl+Option+R = recalibrate; Ctrl+Option+Q (or Ctrl+C here) = quit.
 
 Every frame (gaze, head shift) and every hotkey / click is saved to data/quick/cursor_<time>.npz
 (positions only, no images) and summarised in data/results.csv, so self-recalibration from clicks can be
 built and judged offline. Needs Input Monitoring permission for Terminal (it explains how).
 
-  uv run scripts/cursor_mode.py [--show-dot]
+  uv run scripts/cursor_mode.py [--show-dot] [--warp-key right_command|right_option]
 """
 
 from __future__ import annotations
@@ -29,7 +29,9 @@ from gaze_cursor.landmarks import FaceTracker
 from gaze_cursor.livetest import head_shift
 from gaze_cursor.posture import Reference, posture_metrics
 from gaze_cursor.quick import QUICK_CONFIG
-from gaze_cursor.sinks.cursor import PERMISSION_HELP, MacCursor, input_monitoring_granted, request_input_monitoring
+from gaze_cursor.sinks.cursor import (
+    DEFAULT_WARP_KEY, PERMISSION_HELP, WARP_KEYS, HotkeyDetector, MacCursor, input_monitoring_granted,
+    request_input_monitoring)
 from gaze_cursor.sinks.cursor_view import AMBER, GREEN, GREY, draw_gaze_dot, draw_status
 from gaze_cursor.sinks.overlay import ClickThroughOverlay, FullscreenCanvas
 from gaze_cursor.sinks.quick_view import QUICK_DIR, QuickFit, calibrate_here
@@ -87,6 +89,8 @@ def finish(session: CursorSession) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--show-dot", action="store_true", help="draw a faint ring where the tracker thinks you look")
+    ap.add_argument("--warp-key", choices=sorted(WARP_KEYS), default=DEFAULT_WARP_KEY,
+                    help="the modifier to tap (alone) to jump the cursor to your gaze")
     args = ap.parse_args()
     if not input_monitoring_granted():
         request_input_monitoring()
@@ -100,9 +104,9 @@ def main() -> int:
         names = tuple(tracker.blendshape_names)
         ref = Reference.from_current(fit.posture)
         session = CursorSession(cfg, fit.model, fit.x, ref.center, fit.path.name)
-        print("Cursor mode on: tap Right Option to jump to your gaze; Ctrl+Option+G on/off, "
+        print("Cursor mode on: tap Right Command to jump to your gaze; Ctrl+Option+G on/off, "
               "Ctrl+Option+R recalibrate, Ctrl+Option+Q quit.")
-        cursor = MacCursor((cfg.width_px, cfg.height_px))
+        cursor = MacCursor((cfg.width_px, cfg.height_px), HotkeyDetector(args.warp_key))
         try:
             with ClickThroughOverlay(cfg) as overlay:
                 last_lines = None

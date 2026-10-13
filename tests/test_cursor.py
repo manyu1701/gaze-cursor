@@ -6,32 +6,43 @@ import os
 import pytest
 
 from gaze_cursor.sinks.cursor import (
-    FLAG_CONTROL, FLAG_OPTION, KEY_G, KEY_Q, RIGHT_OPTION_KEYCODE, HotkeyDetector, clamp, event_time_ms)
+    FLAG_COMMAND, FLAG_CONTROL, FLAG_OPTION, KEY_G, KEY_Q, RIGHT_COMMAND_KEYCODE, RIGHT_OPTION_KEYCODE,
+    HotkeyDetector, clamp, event_time_ms)
+
+LEFT_COMMAND_KEYCODE = 55
 
 
-def test_a_quick_tap_of_right_option_warps() -> None:
+def test_a_quick_tap_of_right_command_warps_by_default() -> None:
     d = HotkeyDetector()
-    assert d.flags_changed(RIGHT_OPTION_KEYCODE, FLAG_OPTION, 1000) == []
-    out = d.flags_changed(RIGHT_OPTION_KEYCODE, 0, 1150)
+    assert d.flags_changed(RIGHT_COMMAND_KEYCODE, FLAG_COMMAND, 1000) == []
+    out = d.flags_changed(RIGHT_COMMAND_KEYCODE, 0, 1150)
     assert [e.kind for e in out] == ["warp"] and out[0].t_ms == 1150
 
 
-def test_a_long_hold_option_with_a_key_or_option_click_do_not_warp() -> None:
+def test_a_long_hold_a_shortcut_or_a_command_click_do_not_warp() -> None:
     d = HotkeyDetector()
-    d.flags_changed(RIGHT_OPTION_KEYCODE, FLAG_OPTION, 0)
-    assert d.flags_changed(RIGHT_OPTION_KEYCODE, 0, 900) == []          # held, not tapped
-    d.flags_changed(RIGHT_OPTION_KEYCODE, FLAG_OPTION, 1000)
-    d.key_down(0, FLAG_OPTION, 1050)                                    # Option+A types a character
-    assert d.flags_changed(RIGHT_OPTION_KEYCODE, 0, 1100) == []
-    d.flags_changed(RIGHT_OPTION_KEYCODE, FLAG_OPTION, 2000)
-    d.mouse_down((5, 5), "left", 2050)                                  # Option-click
-    assert d.flags_changed(RIGHT_OPTION_KEYCODE, 0, 2100) == []
+    d.flags_changed(RIGHT_COMMAND_KEYCODE, FLAG_COMMAND, 0)
+    assert d.flags_changed(RIGHT_COMMAND_KEYCODE, 0, 900) == []          # held, not tapped
+    d.flags_changed(RIGHT_COMMAND_KEYCODE, FLAG_COMMAND, 1000)
+    d.key_down(8, FLAG_COMMAND, 1050)                                     # Cmd+C copies
+    assert d.flags_changed(RIGHT_COMMAND_KEYCODE, 0, 1100) == []
+    d.flags_changed(RIGHT_COMMAND_KEYCODE, FLAG_COMMAND, 2000)
+    d.mouse_down((5, 5), "left", 2050)                                    # Cmd-click
+    assert d.flags_changed(RIGHT_COMMAND_KEYCODE, 0, 2100) == []
 
 
 def test_other_modifiers_do_not_warp() -> None:
     d = HotkeyDetector()
-    d.flags_changed(58, FLAG_OPTION, 0)                                 # left Option
-    assert d.flags_changed(58, 0, 100) == []
+    d.flags_changed(LEFT_COMMAND_KEYCODE, FLAG_COMMAND, 0)                # left Command
+    assert d.flags_changed(LEFT_COMMAND_KEYCODE, 0, 100) == []
+    d.flags_changed(RIGHT_OPTION_KEYCODE, FLAG_OPTION, 200)               # the old key
+    assert d.flags_changed(RIGHT_OPTION_KEYCODE, 0, 300) == []
+
+
+def test_right_option_can_still_be_chosen() -> None:
+    d = HotkeyDetector("right_option")
+    d.flags_changed(RIGHT_OPTION_KEYCODE, FLAG_OPTION, 0)
+    assert [e.kind for e in d.flags_changed(RIGHT_OPTION_KEYCODE, 0, 100)] == ["warp"]
 
 
 def test_toggle_quit_and_clicks() -> None:
