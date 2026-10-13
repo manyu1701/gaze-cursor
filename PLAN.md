@@ -34,7 +34,7 @@ Between checkpoints: commit as work goes, keep the private progress notes curren
 
 Ordered by what the M1 data says matters most (exploratory analyses of the first sessions, kept in the author's project notes).
 
-**Status (2026-10-13):** steps 1 and 2 are **done**. The pre-registered H1 test (richer pose-free features beat iris-only across sessions) was run once and is **not supported** (paired gain +0.12 deg, 95% CI [-0.43, +0.67]). *Exploratory, found afterwards:* lighting dominates the error (dim 7.3-9 deg even trained on itself; front-lit 1.3-1.7 deg with its own calibration but 5.3 deg when trained on a pool from other lighting); model-variant differences (0.1-0.6 deg) are small next to that. Step 2b follows from this.
+*(Earlier status lines are superseded by the "M2 DONE" status below; the H1 result and the lighting finding are in RESULTS.md.)*
 
 1. **DONE. Evaluation foundation:** grouped CV by target (leave-one-target-out) and leave-one-session-out; bootstrap CIs over targets; paired model comparisons; per-target bias vs spread report; screen error heatmap. Tune ridge alpha with grouped CV (alpha ~100 already beat alpha 1 on held-out targets).
 2. **DONE. Calibration redesign:** more targets (16-25) that reach close to the safe screen edges (no extrapolation at test time); shorter recording per target (~1 s; error rises after ~1.2 s); randomized order.

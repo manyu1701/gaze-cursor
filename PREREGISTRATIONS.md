@@ -254,3 +254,7 @@ Reported alongside, and caveats (the verdict is not changed by any of them):
 - Absolute errors against click labels are 4.2-5.3 deg (frozen) and 4.2-4.5 deg (learning); the gain is small next to that.
 - Standard caveats from the protocol: one person, one room, one camera, clicks as an imperfect label, the 10 deg evaluation gate is a judgement call.
 - Consequence per the protocol: Cursor mode learns from clicks by default, with low confidence given the points above.
+
+### Round 4: closed, and a disclosure owed by the 6b thresholds (appended 2026-10-14, after the H6 result; protocol and verdict unchanged)
+- **Status:** round 4 is closed. H6 was run once on the first 3 qualifying sessions (result above); the heading "in progress" above was true when written and is left as is because this file is append-only.
+- **Disclosure (from PLAN M3 step 6b):** before the Cursor-mode calibrations were excluded from the session-quality report in code, one exploratory run of the report tooling printed their dot-level leave-one-out numbers. No frozen-vs-learning comparison was computed from it, and those numbers carry no weight in any 6b threshold or in the H6 verdict.
