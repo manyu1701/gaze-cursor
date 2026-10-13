@@ -4,7 +4,7 @@ Move the macOS cursor by tracking eye gaze through a standard webcam.
 
 ## Session start (this repo is public)
 
-- The author's private progress notes live outside this repo, in `../gaze-cursor-notes/PROGRESS.md` (private GitHub repo `gaze-cursor-notes`). If it exists, read its "Start here" first and update it at the end of every session (commit and push in that repo). Never copy personal notes into this repo.
+- The author's private progress notes live outside this repo, in `gaze-cursor-notes/PROGRESS.md`, a sibling of the main checkout (`../gaze-cursor-notes` from the main checkout, not from a worktree; private GitHub repo `gaze-cursor-notes`). If it exists, read its "Start here" first and update it at the end of every session (commit and push in that repo). Never copy personal notes into this repo.
 - Every new pre-registration goes into `PREREGISTRATIONS.md` here and is committed **before** its data exists; results are appended there and summarised in `RESULTS.md`.
 - Never commit recordings, face data or anything personal: the repo is public. `main` is the only branch; push fast-forwards only (force-push and branch deletion are blocked by rulesets).
 
@@ -27,7 +27,7 @@ Move the macOS cursor by tracking eye gaze through a standard webcam.
 - `mediapipe`: face and iris landmarks. **Use the Tasks API (`mediapipe.tasks.python.vision.FaceLandmarker`), not the legacy `mp.solutions.face_mesh`.** Check current API via Context7 before writing MediaPipe code.
 - `opencv-python`: capture and debug drawing. `numpy`, `scikit-learn`: features and calibration models.
 - `pyobjc-framework-Quartz` / `-Cocoa`: screen geometry and the calibration overlay window (since M1); cursor control via CGEvent (M3+).
-- Needs macOS permissions: **Camera** (M0+) and **Accessibility** (M3+) for the app running Python (Terminal / VS Code).
+- Needs macOS permissions: **Camera** (M0+) and **Input Monitoring** (M3+, for the listen-only key/click tap; macOS applies it only after Terminal is restarted) for the app running Python (Terminal / VS Code). Accessibility is not needed while no clicks are synthesised.
 
 ## Architecture
 
@@ -80,6 +80,17 @@ Long term the tracker should work with other webcams, extra/external screens, ot
 - **Keep the three parts separable:** person -> gaze direction (learnable across people), camera geometry (per camera), screen geometry (per layout). Never hard-code camera or screen values; everything comes from config / the OS / calibration.
 - **OS-specific code stays in sinks / platform modules** (cursor control, screen geometry, overlay window); the core pipeline stays portable Python.
 - Face recordings are personal data: other people's sessions need consent, stay local and gitignored.
+
+## Process guardrails (added 2026-10-14)
+
+These exist because two slips happened on 2026-10-13 (two sessions on diverged branches; a plan prerequisite skipped). Follow them:
+
+- **One Claude Code session at a time on this repo.** The session-start hook warns if another session holds `.claude/state/session.lock`; if so, tell the author before changing anything.
+- **Skills** (in `.claude/skills/`): `checkpoint` at every PLAN checkpoint (verify the done-when, record, then stop and report); `preregister` for any claim that will become a finding; `session-intake` for every new recording; `results-update` for any change to RESULTS.md; `plan-audit` at the start of a working session and before closing a milestone.
+- **Reviewers** (in `.claude/agents/`): ask `stats-reviewer` before committing any analysis, evaluation code or results table; ask `plan-reviewer` before reporting a step as done.
+- **Hooks** (`.claude/settings.json`, `.claude/hooks/guard.py`): tests run before every `git commit` in this repo (main checkout or a worktree; the tree being committed is tested; tests that open windows are skipped so a commit cannot disturb a live recording; commits in other repos such as the notes repo are ignored) and block it on failure; recorded data and models cannot be edited; PREREGISTRATIONS.md is append-only; a reminder fires when code changed but PLAN.md / notes were not updated.
+- **Permissions:** force-push, `reset --hard`, `git clean`, branch deletion and history rewrites are denied; `rm -r`, push, merge and rebase ask first.
+- Keep pre-registration for claims; small engineering choices do not need a frozen protocol.
 
 ## Conventions
 

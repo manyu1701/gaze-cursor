@@ -15,3 +15,6 @@ data/quick/
 .DS_Store
 data/tasks/*
 !data/tasks/.gitkeep
+.claude/state/
+.claude/worktrees/
+.claude/settings.local.json

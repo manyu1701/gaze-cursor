@@ -138,6 +138,15 @@ def qualifies(rep: SessionReplay, freeze_after: str) -> str | None:
     return None
 
 
+def status_line(rep: SessionReplay, freeze_after: str) -> str:
+    """Intake view of a log: only what the data rule needs (minutes, click counts, verdict). Deliberately no
+    errors and no frozen-vs-learning comparison, so checking a round-4 session does not reveal its result."""
+    reason = qualifies(rep, freeze_after)
+    return (f"{rep.path.name}: started {rep.started}, {rep.minutes:.1f} min awake, {len(rep.clicks)} labelled "
+            f"clicks, {len(rep.evaluated)} usable; segments excluded {len(rep.excluded_segments)}; "
+            + ("COUNTS" if reason is None else f"does not count: {reason}"))
+
+
 def bootstrap_ci(d_by_session: list[np.ndarray], n_boot: int = N_BOOT, seed: int = SEED) -> dict:
     """Mean of per-click d with 95% CIs: resampling clicks, and sessions then clicks."""
     rng = np.random.default_rng(seed)

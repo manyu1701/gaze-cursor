@@ -2,6 +2,7 @@
 
   uv run scripts/evaluate_online.py --develop [cursor_*.npz ...]   # exploratory replay (default: all logs)
   uv run scripts/evaluate_online.py --preregistered                # the confirmatory test: run ONCE
+  uv run scripts/evaluate_online.py --status                       # session intake: data rule only, no errors
 
 Each Cursor session is replayed click by click: the frozen calibration model and the click-learning
 model both predict the click before the learning model may update on it. Error = distance between the
@@ -39,9 +40,19 @@ def main() -> int:
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--develop", nargs="*", type=Path, help="exploratory replay of these logs (default: all)")
     g.add_argument("--preregistered", action="store_true", help="the frozen round-4 test (run once)")
+    g.add_argument("--status", action="store_true",
+                   help="which logs count for round 4 (minutes, click counts); prints no errors, logs nothing")
     ap.add_argument("--no-log", dest="log", action="store_false")
     args = ap.parse_args()
     logs = sorted(QUICK_DIR.glob("cursor_*.npz"))
+    if args.status:
+        n = 0
+        for p in logs:
+            rep = oe.replay(p, QUICK_DIR)
+            n += oe.qualifies(rep, oe.FREEZE_AFTER or "9999") is None
+            print(oe.status_line(rep, oe.FREEZE_AFTER or "9999"))
+        print(f"Round 4: {min(n, oe.N_SESSIONS)} of {oe.N_SESSIONS} qualifying sessions so far.")
+        return 0
     if args.develop is not None:
         for p in args.develop or logs:
             print("EXPLORATORY  " + describe(oe.replay(Path(p), QUICK_DIR)))

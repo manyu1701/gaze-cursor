@@ -88,3 +88,16 @@ def test_old_logs_start_the_new_calibration_after_the_recalibration_gap() -> Non
     meta = {"calibration": "session_new.npz", "started": "20261013_203902"}
     segs = oe.segments(meta, events, frames, Path("/nonexistent"))
     assert segs[-1] == (20000.0, Path("/nonexistent/session_new.npz"))
+
+
+def test_the_intake_status_shows_the_data_rule_but_no_errors(tmp_path, monkeypatch) -> None:
+    path, p = record(tmp_path, 3.0, 0, "20261014_100000")
+    monkeypatch.setattr(oe, "prior_from_quick", lambda q: p)
+    rep = oe.replay(path, tmp_path)
+    line = oe.status_line(rep, "2026-10-14T09:00:00")
+    assert "COUNTS" in line and "40 labelled" in line
+    for c in rep.evaluated[:5]:                     # no per-click or mean error appears in the text
+        assert f"{c.err_frozen_deg:.2f}" not in line and f"{c.err_online_deg:.2f}" not in line
+    assert "deg" not in line and "frozen" not in line and "learning" not in line
+    short = oe.replay(record(tmp_path, 0.0, 1, "20261014_110000", minutes=3.0)[0], tmp_path)
+    assert "does not count: only 3." in oe.status_line(short, "2026-10-14T09:00:00")
