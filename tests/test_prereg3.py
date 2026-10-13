@@ -10,7 +10,8 @@ import pytest
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.eval.configs import REGISTRY
 from gaze_cursor.eval.prereg3 import (
-    SET_A, Position, PositionSet, leave_one_position_out, position_ok, run_h4, run_h5, select_set_b,
+    SET_A, Position, PositionSet, leave_one_position_out, position_ok, run_h4, run_h5, run_h5_earlier_freeze,
+    select_set_b,
     session_position, set_a, slot_from_note)
 from gaze_cursor.eval.session import CALIB, CLEAN_WINDOW, TEST, Session
 from gaze_cursor.eval.stats import concat
@@ -175,6 +176,18 @@ def test_h5_detects_a_better_candidate_and_not_a_null() -> None:
     assert h5["supported"] and h5["err_cand"] < h5["err_ref"]
     null = run_h5(a, b, REGISTRY["gaze_a10"], REGISTRY["gaze_a10"], SCREEN, 9, "none")
     assert not null["supported"] and null["comparison"]["mean_diff_deg"] == pytest.approx(0)
+
+
+def test_earlier_freeze_h5_detects_a_better_candidate_and_not_a_null() -> None:
+    a = set_a(set_a_sessions())
+    b = select_set_b(set_b_sessions(), freeze_after=FREEZE)
+    assert run_h5_earlier_freeze(a, b, REGISTRY["gaze_a10"], REGISTRY["ray_a1"], SCREEN)["supported"]
+    # Null: nobody moved, so pooling the same position gains nothing over the centre calibration.
+    still = PositionSet(sessions=dict(zip(["C", "N", "R", "L", "Rt", "Lo", "C2"],
+                                          set_b_sessions({k: HEADS["C"] for k in HEADS}))))
+    still_a = PositionSet(sessions=dict(zip(["C", "N", "R", "L", "Rt", "Lo"],
+                                            set_b_sessions({k: HEADS["C"] for k in HEADS})[:6])))
+    assert not run_h5_earlier_freeze(still_a, still, REGISTRY["gaze_a10"], REGISTRY["gaze_a10"], SCREEN)["supported"]
 
 
 # Positions shaped like the real set A (2026-10-13): N much closer than anything else, every other

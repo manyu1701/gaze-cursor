@@ -449,6 +449,42 @@ def run_preregistered_3(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_preregistered_3_earlier(args: argparse.Namespace) -> int:
+    """H5 as frozen earlier on the diverged claude.ai branch (dfa75ff, PROGRESS.md "AMENDMENT 1"):
+    gaze_a100 pooled vs gaze_a10 on set-B C only. Run once, reported next to the executed protocol."""
+    clean = clean_sessions()
+    a, b = set_a(clean), select_set_b(clean, prereg3.EARLIER_FREEZE_AFTER)
+    if not (a.complete and b.complete):
+        print("Refusing to run: still needed:\n  - " + "\n  - ".join(a.missing + b.missing), file=sys.stderr)
+        return 2
+    ref, cand = REGISTRY[PREREG3_REFERENCE], REGISTRY[prereg3.EARLIER_FREEZE_CANDIDATE]
+    screen = common_screen([*a.sessions.values(), *b.sessions.values()])
+    print(f"Earlier round-3 freeze (dfa75ff, H5 AMENDMENT 1): {cand.name} pooled vs {ref.name} on set-B C only")
+    for k in ("C", *DISPLACED, "C2"):
+        print(f"  B {k:3s} {short(b.sessions[k].path.name)}")
+    h5 = prereg3.run_h5_earlier_freeze(a, b, ref, cand, screen)
+    print(f"mean error: {ref.name} C only {h5['err_ref']:.2f}, {cand.name} pooled {h5['err_cand']:.2f} deg")
+    print("per position d: " + ", ".join(f"{k} {v:+.2f}" for k, v in h5["per_position"].items()))
+    print_comparison(f"{ref.name}(C only)", f"{cand.name}(pooled)", "held-out set-B positions", h5["comparison"])
+    print_comparison(f"{ref.name}(pooled)", f"{cand.name}(pooled)", "reported, not a criterion", h5["vs_same_pool"])
+    print(f"{cand.name} on C2 (trained on everything else): {h5['cand_c2']:.2f} deg")
+    print("\nH5 (earlier freeze) success criteria (all three required):")
+    for k, ok in h5["criteria"].items():
+        print(f"  [{'PASS' if ok else 'FAIL'}] {k}")
+    verdict = "SUPPORTED" if h5["supported"] else "NOT SUPPORTED"
+    print(f"H5 (earlier freeze) is {verdict}. No re-tuning on these sessions.")
+    comp = h5["comparison"]
+    if args.log:
+        append_rows([{"time": now(), "mode": "h5_lopo_earlier_freeze", "confirmatory": 1,
+                      "config": f"{ref.name}(C only) - {cand.name}(pooled)", "n_sessions": 13,
+                      "n_targets": comp["n_targets"], "err_deg_mean": comp["mean_diff_deg"],
+                      "ci_lo": comp["ci_lo"], "ci_hi": comp["ci_hi"],
+                      "note": f"preregistered round 3 H5, earlier freeze dfa75ff (run after the 13:12 protocol): "
+                              f"{verdict}; {comp['sessions_new_better']}/5 sessions"}])
+        print("\nlogged to data/results.csv (confirmatory=1)")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--configs", nargs="+", default=["all"], help=f"names or 'all': {sorted(REGISTRY)}")
@@ -466,6 +502,8 @@ def main() -> int:
                     help="with --positions: sweep 3/5/7/9 quick dots, scored on all other targets")
     ap.add_argument("--preregistered-3", dest="preregistered_3", action="store_true",
                     help="run the pre-registered round-3 tests (H4, H5); refuses until frozen")
+    ap.add_argument("--preregistered-3-earlier", dest="preregistered_3_earlier", action="store_true",
+                    help="run H5 as frozen earlier on the claude.ai branch (dfa75ff): pooled gaze_a100 vs C only")
     ap.add_argument("--n-boot", type=int, default=10_000)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-log", dest="log", action="store_false", help="do not append to results.csv")
@@ -474,6 +512,8 @@ def main() -> int:
         return run_positions(args)
     if args.preregistered_3:
         return run_preregistered_3(args)
+    if args.preregistered_3_earlier:
+        return run_preregistered_3_earlier(args)
     if args.preregistered_2:
         return run_preregistered_2(args)
     return run_preregistered(args) if args.preregistered else run_exploratory(args)
