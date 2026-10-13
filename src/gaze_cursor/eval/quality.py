@@ -36,7 +36,7 @@ def refusal(s: Session) -> str | None:
     start Cursor-mode sessions (note ``quick calibration (Cursor)``) are not reported on until the
     H6 test has run. Sessions on a distorted canvas have biased target positions (``is_clean``).
     """
-    if "(Cursor)" in str(s.meta.get("note", "")):
+    if "(Cursor)" in str(s.meta.get("note", "")) or s.meta.get("kind") == "cursor_session":
         return "Cursor-mode calibration: round-4 data, not reported until H6 has run"
     if not s.is_clean:
         return "targets were not drawn 1:1 on the display (unclean window)"
