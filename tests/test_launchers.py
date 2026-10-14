@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-LAUNCHERS = ("Calibrate.command", "Run.command", "Practice.command", "Cursor.command", "Demo.command")
+LAUNCHERS = ("Calibrate.command", "Run.command", "Practice.command", "Cursor.command", "Demo.command", "UI.command")
 
 
 @pytest.mark.parametrize("name", LAUNCHERS)
@@ -39,6 +39,7 @@ def test_practice_launcher_starts_target_practice() -> None:
 def test_window_class_is_created_once_per_process() -> None:
     """Regression: the guided calibration opens two fullscreen canvases in one process, and a second
     ``_CanvasWindow`` class definition raised "overriding existing Objective-C class"."""
+    pytest.importorskip("AppKit", reason="needs macOS (pyobjc)")
     from gaze_cursor.sinks.overlay import _make_window_class
 
     assert _make_window_class() is _make_window_class()

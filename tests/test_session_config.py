@@ -11,6 +11,7 @@ NAMES = BLEND_FEATURE_NAMES + tuple(f"other{i}" for i in range(52 - len(BLEND_FE
 
 
 def test_from_system_is_plausible() -> None:
+    pytest.importorskip("Quartz", reason="needs macOS (pyobjc)")
     cfg = ScreenConfig.from_system()
     assert cfg.width_px > 0 and cfg.height_px > 0
     assert 20 < cfg.width_cm < 100 and 10 < cfg.height_cm < 70

@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gaze Cursor</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1c2330; --muted: #5f6b7d; --line: #dfe3ea;
+  --accent: #2f6fed; --accent-ink: #ffffff; --pass: #1f8a4c; --warn: #b7791f; --fail: #c0392b; --info: #5f6b7d;
+  --bar1: #2f6fed; --bar2: #8fb3f7; --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d; --panel: #1a2029; --ink: #e8ecf2; --muted: #98a3b5; --line: #2b3441;
+    --accent: #6c9bff; --accent-ink: #0d1117; --pass: #4cc38a; --warn: #e5b04b; --fail: #ef7a6c; --info: #98a3b5;
+    --bar1: #6c9bff; --bar2: #35508f;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161d; --panel: #1a2029; --ink: #e8ecf2; --muted: #98a3b5; --line: #2b3441;
+  --accent: #6c9bff; --accent-ink: #0d1117; --pass: #4cc38a; --warn: #e5b04b; --fail: #ef7a6c; --info: #98a3b5;
+  --bar1: #6c9bff; --bar2: #35508f;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+header { background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+.bar { max-width: 1100px; margin: 0 auto; padding: 10px 16px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.brand { font-weight: 700; letter-spacing: .2px; }
+nav { display: flex; gap: 4px; flex-wrap: wrap; }
+nav a { padding: 6px 12px; border-radius: 8px; color: var(--muted); text-decoration: none; }
+nav a.on { background: var(--accent); color: var(--accent-ink); }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+h1 { font-size: 22px; margin: 4px 0 14px; }
+h2 { font-size: 16px; margin: 0 0 10px; }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-bottom: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; min-width: 0; }
+.big { font-size: 28px; font-weight: 700; line-height: 1.1; }
+.muted { color: var(--muted); } .small { font-size: 13px; }
+.pill { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; border: 1px solid currentColor; }
+.pass { color: var(--pass); } .warn { color: var(--warn); } .fail { color: var(--fail); } .info, .na { color: var(--info); }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); white-space: nowrap; }
+th.sort { cursor: pointer; }
+tr.link { cursor: pointer; } tr.link:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.scroll { overflow-x: auto; }
+select { max-width: 100%; }
+button, select, input { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; }
+button { cursor: pointer; } button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.stack { height: 14px; display: flex; border-radius: 7px; overflow: hidden; background: var(--line); }
+.stack span { display: block; height: 100%; }
+.notice { border-left: 3px solid var(--info); padding: 6px 12px; margin: 6px 0; background: var(--panel); border-radius: 0 8px 8px 0; }
+.notice.warn { border-color: var(--warn); }
+pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; overflow: auto; font-size: 12.5px; }
+code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 90%; }
+img.report { max-width: 100%; border: 1px solid var(--line); border-radius: 8px; }
+.doc h1, .doc h2, .doc h3 { margin: 18px 0 8px; } .doc p { margin: 8px 0; } .doc ul { margin: 6px 0 6px 20px; padding: 0; }
+a { color: var(--accent); }
+svg text { fill: var(--muted); font-size: 11px; }
+@media (max-width: 600px) { .big { font-size: 24px; } th, td { padding: 6px; } }
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <span class="brand">Gaze Cursor</span>
+  <nav id="nav"></nav>
+  <span class="muted small" style="margin-left:auto">local only · nothing leaves this Mac</span>
+</div></header>
+<main id="main"></main>
+<script>
+"use strict";
+const TOKEN = "__TOKEN__";
+const PAGES = [["home", "Home"], ["sessions", "Sessions"], ["learning", "Learning"], ["results", "Results"], ["tools", "Tools"]];
+const KIND = {calibration: "Calibration", quick: "Quick calibration", quick_cursor: "Cursor calibration",
+              cursor: "Cursor log", livetest: "Live test", task: "Practice task"};
+
+// --- tiny DOM helpers: every piece of text goes through textContent, never innerHTML -------------
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat(Infinity)) if (k != null && k !== false) e.append(k.nodeType ? k : document.createTextNode(String(k)));
+  return e;
+}
+const api = (p, opts) => fetch(p, opts).then(r => r.ok ? r.json() : r.json().catch(() => ({})).then(j => { throw new Error(j.error || r.status); }));
+const fmt = (v, d = 1) => v == null || v === "" ? "–" : (typeof v === "number" ? v.toFixed(d) : v);
+const int = v => v == null ? "–" : Number(v).toLocaleString();
+const pill = (level, text) => h("span", {class: "pill " + level}, text || level);
+const when = s => s ? s.replace("T", " ").slice(0, 16) : "–";
+const card = (title, ...kids) => h("div", {class: "card"}, title ? h("h2", null, title) : null, kids);
+function stat(value, label, sub) { return h("div", {class: "card"}, h("div", {class: "big"}, value), h("div", null, label), sub ? h("div", {class: "muted small"}, sub) : null); }
+function table(cols, rows, onclick) {
+  return h("div", {class: "scroll"}, h("table", null, h("thead", null, h("tr", null, cols.map(c => h("th", null, c)))),
+    h("tbody", null, rows.map(r => { const tr = h("tr", onclick ? {class: "link", onclick: () => onclick(r)} : null, r.cells.map(c => h("td", null, c))); return tr; }))));
+}
+// --- minimal, safe markdown (headings, lists, code, tables, bold/inline code) ---------------------
+function inline(text) {
+  const out = []; const re = /(`[^`]+`|\*\*[^*]+\*\*)/g; let last = 0, m;
+  while ((m = re.exec(text))) { if (m.index > last) out.push(text.slice(last, m.index)); const t = m[0];
+    out.push(t[0] === "`" ? h("code", null, t.slice(1, -1)) : h("strong", null, t.slice(2, -2))); last = m.index + t.length; }
+  if (last < text.length) out.push(text.slice(last)); return out;
+}
+function markdown(src) {
+  const root = h("div", {class: "doc"}); const lines = src.split("\n"); let i = 0;
+  while (i < lines.length) {
+    const ln = lines[i];
+    if (ln.startsWith("```")) { const buf = []; i++; while (i < lines.length && !lines[i].startsWith("```")) buf.push(lines[i++]); i++; root.append(h("pre", null, buf.join("\n"))); continue; }
+    const hm = /^(#{1,4})\s+(.*)/.exec(ln);
+    if (hm) { root.append(h("h" + Math.min(hm[1].length + 1, 4), {id: "h-" + i}, inline(hm[2]))); i++; continue; }
+    if (ln.startsWith("|") && lines[i + 1] && /^\|[\s:|-]+\|?\s*$/.test(lines[i + 1])) {
+      const cells = l => l.replace(/^\||\|\s*$/g, "").split("|").map(s => s.trim());
+      const head = cells(ln); i += 2; const body = [];
+      while (i < lines.length && lines[i].startsWith("|")) body.push(cells(lines[i++]));
+      root.append(h("div", {class: "scroll"}, h("table", null, h("thead", null, h("tr", null, head.map(c => h("th", null, inline(c))))),
+        h("tbody", null, body.map(r => h("tr", null, r.map(c => h("td", null, inline(c)))))))));
+      continue; }
+    if (/^\s*([-*]|\d+\.)\s+/.test(ln)) { const ul = h("ul"); while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) ul.append(h("li", null, inline(lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, "")))); root.append(ul); continue; }
+    if (!ln.trim()) { i++; continue; }
+    const buf = [ln]; i++; while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|```|\||\s*([-*]|\d+\.)\s)/.test(lines[i])) buf.push(lines[i++]);
+    root.append(h("p", null, inline(buf.join(" "))));
+  }
+  return root;
+}
+// --- pages -----------------------------------------------------------------------------------------
+const pages = {};
+pages.home = async () => {
+  const o = await api("/api/overview"); const t = o.totals, tg = o.tags, L = o.learned;
+  const view = h("div");
+  view.append(h("h1", null, "Home"));
+  view.append(h("div", {id: "launch"}));
+  for (const n of o.health) view.append(h("div", {class: "notice " + (n.level === "warn" ? "warn" : "")}, n.text));
+  view.append(h("div", {class: "grid"},
+    stat(int(t.files), "recordings", Object.entries(t.by_kind).map(([k, v]) => `${v.files} ${KIND[k] || k}`).join(" · ") || "none yet"),
+    stat(int(t.targets), "calibration targets", "the unit of data is a target, not a frame"),
+    stat(fmt(t.cursor_hours, 1) + " h", "Cursor mode logged", `${int(t.clicks)} clicks, ${int(t.clicks_learned)} learned from`),
+    stat(L.exists ? (L.reusable ? "ready" : "stale") : "none", "saved calibration",
+      L.exists && L.age_h != null ? `${fmt(L.age_h, 1)} h old · ${int(L.n_updates)} click updates` : "9-dot calibration needed")));
+  const segs = tg.histogram.map((n, i) => ({n, i}));
+  const col = i => `color-mix(in srgb, var(--pass) ${Math.round(i / tg.n_checked * 100)}%, var(--fail))`;
+  view.append(card("Condition tags",
+    h("div", {class: "stack"}, segs.filter(s => s.n).map(s => h("span", {style: `width:${s.n / Math.max(tg.n, 1) * 100}%;background:${col(s.i)}`, title: `${s.n} recordings with ${s.i}/${tg.n_checked} tags`}))),
+    h("p", {class: "small muted"}, `${tg.complete} of ${tg.n} recordings have all ${tg.n_checked} tags · ${tg.with_person_id} have a person id · ${tg.own_block} wrote their own block · ${tg.backfilled} backfilled · ${tg.legacy_without_tags} legacy without tags. Tags are what lets sessions be pooled across days and people later.`)));
+  if (o.latest) {
+    const r = o.latest;
+    view.append(card("Latest recording", h("p", null, h("a", {href: "#/session/" + encodeURIComponent(r.id)}, r.file), " ", pill("info", KIND[r.kind] || r.kind), " ", pill(r.tags_verdict, "tags " + r.tags_verdict)),
+      h("p", {class: "muted small"}, `${when(r.started)} · ${r.targets || 0} targets · ${fmt(r.minutes, 1)} min · ${r.note || "no note"}`)));
+  }
+  mountLaunch(view.querySelector("#launch"), "live").catch(e => view.querySelector("#launch").append(h("div", {class: "notice warn"}, "Launcher unavailable: " + e.message)));
+  return view;
+};
+
+pages.sessions = async () => {
+  const {rows, n_checked: NC} = await api("/api/sessions"); let sortKey = "started", dir = -1;
+  const f = {kind: "", verdict: "", q: ""};
+  const view = h("div", null, h("h1", null, "Sessions"));
+  const kinds = [...new Set(rows.map(r => r.kind))];
+  const bar = h("div", {class: "row"},
+    h("select", {onchange: e => { f.kind = e.target.value; draw(); }}, h("option", {value: ""}, "all kinds"), kinds.map(k => h("option", {value: k}, KIND[k] || k))),
+    h("select", {onchange: e => { f.verdict = e.target.value; draw(); }}, h("option", {value: ""}, "any tag verdict"), ["pass", "warn", "fail"].map(k => h("option", {value: k}, "tags " + k))),
+    h("input", {type: "search", placeholder: "search file, note, person", oninput: e => { f.q = e.target.value.toLowerCase(); draw(); }}));
+  const out = h("div"); view.append(bar, out);
+  const cols = [["started", "When"], ["kind", "Kind"], ["file", "File"], ["person_id", "Person"], ["lighting", "Lighting"], ["tags", "Tags"], ["targets", "Targets"], ["minutes", "Min"], ["clicks", "Clicks"], ["note", "Note"]];
+  function draw() {
+    const shown = rows.filter(r => (!f.kind || r.kind === f.kind) && (!f.verdict || r.tags_verdict === f.verdict) &&
+      (!f.q || [r.file, r.note, r.person_id, r.lighting].join(" ").toLowerCase().includes(f.q)))
+      .sort((a, b) => { const x = a[sortKey], y = b[sortKey]; return (x > y ? 1 : x < y ? -1 : 0) * dir; });
+    const head = h("tr", null, cols.map(([k, l]) => h("th", {class: "sort", onclick: () => { dir = sortKey === k ? -dir : -1; sortKey = k; draw(); }}, l + (sortKey === k ? (dir > 0 ? " ▲" : " ▼") : ""))));
+    out.replaceChildren(h("p", {class: "muted small"}, `${shown.length} of ${rows.length} recordings`),
+      h("div", {class: "scroll"}, h("table", null, h("thead", null, head), h("tbody", null, shown.map(r =>
+        h("tr", {class: "link", onclick: () => { location.hash = "#/session/" + encodeURIComponent(r.id); }},
+          h("td", null, when(r.started)), h("td", null, KIND[r.kind] || r.kind), h("td", null, r.file, r.error ? pill("fail", r.error) : null),
+          h("td", null, r.person_id || "–"), h("td", null, r.lighting || r.lighting_tag || "–"),
+          h("td", null, pill(r.tags_verdict, r.tags + "/" + NC)), h("td", null, r.targets || "–"), h("td", null, r.minutes ? fmt(r.minutes, 1) : "–"),
+          h("td", null, r.kind === "cursor" ? `${r.clicks} (${r.clicks_learned} learned)` : "–"), h("td", {class: "muted small"}, r.note || "")))))));
+  }
+  draw(); return view;
+};
+
+pages.session = async id => {
+  const d = await api("/api/session/" + encodeURIComponent(id)); const r = d.row;
+  const view = h("div", null, h("p", null, h("a", {href: "#/sessions"}, "← all sessions")), h("h1", null, r.file));
+  view.append(h("div", {class: "grid"},
+    stat(KIND[r.kind] || r.kind, "kind", when(r.started)), stat(r.targets || "–", "targets", `${int(r.frames)} frames · ${fmt(r.minutes, 1)} min`),
+    stat(r.tags + "/" + d.n_checked, "condition tags", r.legacy ? (r.backfilled ? "from a backfilled sidecar" : "legacy: no tags were recorded") : "own conditions block"),
+    stat(r.person_id || "–", "person", `lighting ${r.lighting || r.lighting_tag || "–"} · glasses ${r.glasses || "–"}`)));
+  if (r.note) view.append(card("Note", r.note));
+  if (r.kind === "cursor") view.append(card("Cursor mode summary", table(["Metric", "Value"], [
+    {cells: ["Clicks", int(r.clicks)]}, {cells: ["Learned from", int(r.clicks_learned)]},
+    {cells: ["Learning", r.learn_on == null ? "–" : (r.learn_on ? "on" : "off")]}, {cells: ["Resumed calibration", r.resumed || "no"]},
+    {cells: ["Click-to-gaze distance, median (deg; monitoring, biased)", fmt(r.click_gaze_deg_median, 2) + `  (n=${r.click_gaze_n})`]}]),
+    h("p", {class: "small muted"}, d.monitor_note)));
+  const cals = (d.meta.calibrations || []);
+  if (r.kind === "cursor" && cals.length) view.append(card("Calibrations used in this session", table(["Started", "Calibration file"], cals.map(c => ({cells: [String(c[0]), String(c[1] == null ? "unknown" : c[1])]})))));
+  if (r.issues.length) view.append(card("Condition-tag issues", table(["Field", "Level", "Message"], r.issues.map(i => ({cells: [i.field, pill(i.severity), i.message]})))));
+  const q = h("div"); view.append(card("Quality report", q));
+  const run = () => { q.replaceChildren(h("p", {class: "muted"}, "computing…")); api("/api/session/" + encodeURIComponent(id) + "/quality").then(rep => q.replaceChildren(renderQuality(rep))).catch(e => q.replaceChildren(h("p", {class: "fail"}, String(e)))); };
+  q.append(h("button", {class: "primary", onclick: run}, "Compute quality report"), h("span", {class: "muted small"}, " loads the recording once; cached afterwards"));
+  const img = h("img", {class: "report", src: "/api/session/" + encodeURIComponent(id) + "/report.png", alt: "target and prediction map", onerror: e => e.target.remove()});
+  view.append(h("div", {class: "card"}, h("h2", null, "Report image"), img, h("p", {class: "small muted"}, "Shown only if the Session report tool has already made it.")));
+  view.append(h("details", {class: "card"}, h("summary", null, "Raw metadata"), h("pre", null, JSON.stringify(d.meta, null, 2))));
+  return view;
+};
+function renderQuality(rep) {
+  const box = h("div");
+  if (rep.mode === "error") return h("p", {class: "fail"}, rep.why);
+  if (rep.mode === "refused") return h("p", {class: "muted"}, rep.why);
+  if (rep.mode === "tags_only") box.append(h("p", null, rep.why, " ", pill(rep.overall, "tags " + rep.overall)));
+  else box.append(h("p", null, "Overall ", pill(rep.overall)));
+  for (const c of rep.checks) box.append(h("h2", {style: "margin-top:14px"}, `${c.check}. ${c.title} `, pill(c.level)),
+    table(["Metric", "Value", "Level", "Note"], c.lines.map(l => ({cells: [l.name, typeof l.value === "number" ? fmt(l.value, 2) : (l.value ?? "–"), pill(l.level), l.note || ""]}))));
+  box.append(h("p", {class: "small muted"}, rep.note)); return box;
+}
+
+function barChart(days) {
+  const W = 760, H = 180, P = 28, n = days.length || 1, bw = Math.max(6, Math.min(40, (W - P * 2) / n - 6));
+  const max = Math.max(1, ...days.map(d => d.clicks)); const ns = "http://www.w3.org/2000/svg";
+  const s = document.createElementNS(ns, "svg"); s.setAttribute("viewBox", `0 0 ${W} ${H}`); s.setAttribute("role", "img");
+  s.setAttribute("aria-label", "clicks logged and learned from, per day"); s.style.width = "100%";
+  const add = (tag, a, text) => { const e = document.createElementNS(ns, tag); for (const k in a) e.setAttribute(k, a[k]); if (text != null) e.textContent = text; s.append(e); return e; };
+  days.forEach((d, i) => { const x = P + i * ((W - P * 2) / n) + 3, hh = (H - 50) * d.clicks / max, hl = (H - 50) * d.clicks_learned / max;
+    add("rect", {x, y: H - 30 - hh, width: bw, height: hh, fill: "var(--bar2)"}).append(Object.assign(document.createElementNS(ns, "title"), {textContent: `${d.day}: ${d.clicks} clicks, ${d.clicks_learned} learned`}));
+    add("rect", {x, y: H - 30 - hl, width: bw, height: hl, fill: "var(--bar1)"});
+    add("text", {x: x + bw / 2, y: H - 14, "text-anchor": "middle"}, d.day.slice(5)); });
+  add("text", {x: 4, y: 14}, max + " clicks");
+  return s;
+}
+pages.learning = async () => {
+  const d = await api("/api/learning"); const L = d.learned, view = h("div", null, h("h1", null, "Learning"));
+  view.append(h("div", {class: "notice"}, d.monitor_note));
+  view.append(h("div", {class: "grid"},
+    card("Learned state now", L.exists ? [h("div", {class: "big"}, int(L.n_updates)), h("div", null, "click updates in the saved model"),
+      h("p", {class: "small muted"}, `Calibrated ${fmt(L.age_h, 1)} h ago (${L.reusable ? "will be reused" : "too old to reuse; max " + L.max_age_h + " h"}) · ${L.calib} · ${int(L.calibration_frames)} calibration frames.`)]
+      : h("p", {class: "muted"}, "No saved calibration yet."), h("p", {class: "small muted"}, "History: " + L.history),
+    ),
+    card("Three levels", d.levels.map(l => h("p", null, h("strong", null, l.level + " "), pill(l.state === "built" ? "info" : "na", l.state), h("br"), h("span", {class: "small muted"}, l.text))))));
+  view.append(card("Clicks per day", d.per_day.length ? barChart(d.per_day) : h("p", {class: "muted"}, "No Cursor-mode logs yet."),
+    h("p", {class: "small muted"}, "Dark bar: clicks the model learned from; light bar: all clicks logged.")));
+  const gaze = x => x.click_gaze.length ? x.click_gaze.map(g => `${fmt(g.median_deg, 2)}° (n=${g.n}, learning ${g.learn_on == null ? "?" : g.learn_on ? "on" : "off"})`).join(" · ") : "–";
+  view.append(card("Per day", table(["Day", "Calibrations", "Cursor sessions", "Minutes", "Clicks", "Learned", "Click-to-gaze distance per session (monitoring, biased; no alarm thresholds)"],
+    d.per_day.slice().reverse().map(x => ({cells: [x.day, x.calibrations, x.cursor_sessions, fmt(x.minutes, 0), x.clicks, x.clicks_learned, gaze(x)]}))),
+    h("p", {class: "small muted"}, "One median per Cursor session, never averaged across sessions: they differ in click count and in whether the model was learning from the same clicks.")));
+  const c = d.coverage;
+  view.append(card("Condition coverage (full calibrations)", c.n ? table(["Lighting \\ slot", ...c.slots], c.lighting.map((li, i) => ({cells: [li, ...c.cells[i].map(v => v || "·")]}))) : h("p", {class: "muted"}, "No full calibrations yet."), h("p", {class: "small muted"}, c.note)));
+  return view;
+};
+
+pages.results = async (doc) => {
+  const d = await api("/api/results"), R = d.results_csv, view = h("div", null, h("h1", null, "Results"));
+  const tabs = h("div", {class: "row"}, h("button", {onclick: () => { location.hash = "#/results"; }}, "Overview"),
+    d.docs.map(n => h("button", {class: doc === n ? "primary" : "", onclick: () => { location.hash = "#/results/" + n; }}, n + ".md")));
+  view.append(tabs);
+  if (doc) { const text = await fetch("/api/docs/" + encodeURIComponent(doc)).then(r => r.ok ? r.text() : "Not found"); view.append(card(null, markdown(text))); return view; }
+  view.append(card("Pre-registered rounds", d.rounds.length ? table(["Round", "Status", "Result section"], d.rounds.map(r => ({cells: [r.title, pill(r.status === "result recorded" ? "info" : "warn", r.status),
+      [r.result_heading || "", ...r.not_supported.map(t => h("div", {class: "small warn"}, "mentions NOT SUPPORTED: " + t))]]}))) : h("p", {class: "muted"}, "None found.")));
+  view.append(card("Plan status", d.plan_status.map(s => h("p", {class: "small"}, ...inline(s.replace(/\*\*/g, ""))))));
+  view.append(card("results.csv by mode", R.exists ? table(["Mode", "Rows", "Confirmatory", "Last"], R.modes.map(m => ({cells: [m.mode, m.n, m.confirmatory, when(m.last)]}))) : h("p", {class: "muted"}, "No results.csv.")));
+  if (R.exists) view.append(card("Latest rows (as logged)", h("p", {class: "small muted"}, "The error columns mean different things per mode: read the basis column. For confirmatory rows they hold a paired difference, not an error, and the logged CI is click / target level (optimistic); the two-level CI is in PREREGISTRATIONS.md."), table(R.columns, R.latest.map(r => ({cells: R.columns.map(c => c === "note" ? h("span", {class: "small", title: r[c] || ""}, r[c] || "") : (r[c] || ""))})))));
+  return view;
+};
+
+
+// --- launching tools --------------------------------------------------------------------------------------
+const store = {get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} }};
+const post = (body) => fetch("/api/launch", {method: "POST", headers: {"X-Token": TOKEN, "Content-Type": "application/json"}, body: JSON.stringify(body)})
+  .then(r => r.json().then(j => { if (!r.ok) throw new Error(j.error || r.status); return j; }));
+const TAGS = {person: store.get("tag.person") || "", lighting_tag: store.get("tag.lighting") || "", glasses: store.get("tag.glasses") || "", posture_note: store.get("tag.posture") || ""};
+function tagForm() {
+  const f = (label, el) => h("label", {class: "small muted", style: "display:flex;flex-direction:column;gap:2px"}, label, el);
+  const sel = (key, opts) => h("select", {onchange: e => { TAGS[key] = e.target.value; store.set("tag." + key.split("_")[0], TAGS[key]); }}, h("option", {value: ""}, "not set"), opts.map(o => h("option", {value: o, selected: TAGS[key] === o}, o)));
+  const txt = (key, ph) => h("input", {type: "text", value: TAGS[key], placeholder: ph, oninput: e => { TAGS[key] = e.target.value.trim(); store.set("tag." + key.split("_")[0], TAGS[key]); }});
+  return h("details", {class: "card", open: !TAGS.person}, h("summary", null, "Condition tags for the next recording"),
+    h("p", {class: "small muted"}, "These travel with the launch (as GAZE_PERSON_ID, GAZE_LIGHTING_TAG, GAZE_GLASSES, GAZE_POSTURE_NOTE). The recorders write them into the session once PLAN step 6c stage 4 is wired; until then they are only logged locally."),
+    h("div", {class: "row"}, f("Person id (p01, p02 ...)", txt("person", "p01")), f("Lighting", sel("lighting_tag", ["day", "lamp", "dark", "backlit"])),
+      f("Glasses", sel("glasses", ["yes", "no"])), f("Posture note", txt("posture_note", "upright, 60 cm"))));
+}
+function optWidget(o, state, sessions) {
+  const set = v => { state[o.name] = v; };
+  if (o.kind === "flag") { set(!!o.default); return h("label", {class: "small"}, h("input", {type: "checkbox", checked: !!o.default, onchange: e => set(e.target.checked)}), " " + o.label); }
+  if (o.kind === "choice") { set(o.default); return h("label", {class: "small muted"}, o.label + " ", h("select", {onchange: e => set(e.target.value)}, o.choices.map(c => h("option", {value: c, selected: c === o.default}, c)))); }
+  if (o.kind === "int") { if (o.default != null) set(o.default); return h("label", {class: "small muted"}, o.label + " ", h("input", {type: "number", min: o.lo, max: o.hi, value: o.default ?? "", style: "width:80px", oninput: e => { if (e.target.value === "") delete state[o.name]; else set(Number(e.target.value)); }})); }
+  if (o.kind === "text") { return h("label", {class: "small muted", style: "display:block"}, o.label, h("input", {type: "text", style: "width:100%", maxlength: 120, oninput: e => set(e.target.value)})); }
+  if (o.kind === "session") { const list = sessions.filter(r => !r.error && ["calibration", "quick", "quick_cursor", "cursor"].includes(r.kind)); if (list[0]) set(list[0].id);
+    return h("label", {class: "small muted"}, o.label + " ", h("select", {onchange: e => set(e.target.value)}, list.map(r => h("option", {value: r.id}, `${when(r.started)}  ${r.file}`)))); }
+  return null;
+}
+function toolCard(t, info, sessions) {
+  const state = {}; const out = h("div"); const pre = h("pre", {style: "display:none;max-height:360px"});
+  const btn = h("button", {class: "primary"}, t.kind === "live" ? "Start" : "Run");
+  btn.disabled = t.kind === "live" && (!info.macos || info.camera_busy.length > 0);
+  btn.addEventListener("click", async () => {
+    out.replaceChildren(); const opts = {...state};
+    if (t.tags) for (const [k, v] of Object.entries(TAGS)) if (v) opts[k] = v;
+    try {
+      const res = await post({tool: t.key, options: opts});
+      if (t.kind === "live") { out.replaceChildren(h("span", {class: "pass small"}, "Opened in Terminal: switch to that window.")); return; }
+      btn.disabled = true; pre.style.display = "block"; pre.textContent = "running…";
+      for (;;) { await new Promise(r => setTimeout(r, 1200)); const j = await api("/api/job/" + res.id); pre.textContent = j.output || (j.status === "running" ? `running… ${j.seconds}s` : "(no output)");
+        if (j.status !== "running") { out.replaceChildren(pill(j.status === "done" ? "pass" : "fail", j.status)); break; } }
+    } catch (e) { out.replaceChildren(h("span", {class: "fail small"}, e.message)); }
+    btn.disabled = t.kind === "live" && info.camera_busy.length > 0;
+  });
+  return h("div", {class: "card"}, h("h2", null, t.title), h("p", {class: "small muted"}, t.help), t.options.map(o => h("div", {style: "margin:4px 0"}, optWidget(o, state, sessions))),
+    t.note ? h("p", {class: "small muted"}, "Side effects: " + t.note) : null, h("div", {class: "row"}, btn, out), pre);
+}
+async function mountLaunch(box, kind) {
+  const [info, ses] = await Promise.all([api("/api/tools"), kind === "headless" ? api("/api/sessions") : Promise.resolve({rows: []})]);
+  const tools = info.tools.filter(t => t.kind === kind);
+  if (kind === "live") {
+    box.append(h("h2", null, "Start a tool"), h("p", {class: "small muted"}, "Live tools open in Terminal, which needs the Camera permission (and Input Monitoring for Cursor mode: System Settings > Privacy & Security; restart Terminal after granting it). One camera tool at a time."));
+    if (!info.macos) box.append(h("div", {class: "notice"}, "Live tools can only be started on macOS. This page still shows your data."));
+    if (info.camera_busy.length) box.append(h("div", {class: "notice warn"}, `Camera in use by: ${info.camera_busy.join(", ")}. Quit it before starting another tool.`));
+    box.append(tagForm());
+  }
+  box.append(h("div", {class: "grid"}, tools.map(t => toolCard(t, info, ses.rows))));
+}
+pages.tools = async () => {
+  const view = h("div", null, h("h1", null, "Tools"), h("p", {class: "muted"}, "Scripts that print a result and need no camera. Frozen pre-registered tests and development scripts are not offered here; run those from the command line."));
+  const box = h("div"); view.append(box); await mountLaunch(box, "headless"); return view;
+};
+
+// --- router ------------------------------------------------------------------------------------------
+async function route() {
+  const parts = decodeURIComponent(location.hash.replace(/^#\/?/, "")).split("/"); const page = parts[0] || "home";
+  const nav = document.getElementById("nav"); const extra = window.EXTRA_PAGES || [];
+  nav.replaceChildren(...[...PAGES, ...extra].map(([k, l]) => h("a", {href: "#/" + k, class: page === k || (page === "session" && k === "sessions") ? "on" : ""}, l)));
+  const main = document.getElementById("main"); main.replaceChildren(h("p", {class: "muted"}, "loading…"));
+  try {
+    const rest = parts.slice(1).join("/"); const fn = pages[page];
+    main.replaceChildren(fn ? await fn(rest) : h("p", null, "Not found"));
+  } catch (e) { main.replaceChildren(h("div", {class: "notice warn"}, "Could not load this page: " + e.message)); }
+}
+window.addEventListener("hashchange", route); route();
+</script>
+</body>
+</html>
