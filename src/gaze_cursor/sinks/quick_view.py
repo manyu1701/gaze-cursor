@@ -20,10 +20,12 @@ from gaze_cursor.config import ScreenConfig
 from gaze_cursor.eval.session import CALIB, SESSIONS_DIR, SessionRecorder
 from gaze_cursor.features import assemble, extract_features
 from gaze_cursor.landmarks import FaceTracker
-from gaze_cursor.posture import LIGHT_MIN_FACE, lighting_label, lighting_stats, posture_metrics
+from gaze_cursor.posture import LIGHT_MIN_FACE, lighting_label, lighting_stats, posture_metrics, summarize_lighting
 from gaze_cursor.quick import (
     QUICK_CONFIG, QUICK_DOTS, QUICK_LAYOUT, QUICK_RECORD_S, QUICK_SETTLE_S, fit_quick, fit_report,
     missing_dots, quick_targets)
+from gaze_cursor.conditions import iris_diameter_px
+from gaze_cursor.sinks import tags as condition_tags
 from gaze_cursor.sinks.overlay import FullscreenCanvas
 
 QUICK_DIR = SESSIONS_DIR.parent / "quick"   # gitignored; never read by the research analyses
@@ -88,6 +90,24 @@ def start_screen(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanvas, me
             return "quick"
 
 
+_TAGS: condition_tags.Tags | None = None
+
+
+def set_tags(tags: condition_tags.Tags) -> None:
+    """The condition tags every quick calibration in this process records (set once at start-up)."""
+    global _TAGS
+    _TAGS = tags
+
+
+def _tags_for_recording() -> condition_tags.Tags:
+    """The tags to record with; asks (or refuses, without a person id) if the script did not set them."""
+    global _TAGS
+    if _TAGS is None:
+        import argparse
+        _TAGS = condition_tags.resolve(argparse.Namespace())
+    return _TAGS
+
+
 def quick_calibration(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanvas,
                       cfg: ScreenConfig, note: str = "quick calibration (Run)",
                       record: bool = True) -> QuickFit | Path | None:
@@ -95,6 +115,8 @@ def quick_calibration(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanva
     frames; None if aborted. Saves the recording to data/quick/ (record and replay), unless
     ``record`` is False (demo for a friend: nothing about their face is written to disk)."""
     seed = int(time.time()) % 2**31
+    tags = _tags_for_recording() if record else None    # a demo records nothing, so it needs no tags
+    iris_log: list[float] = []
     targets = quick_targets(cfg, seed=seed)
     rec = SessionRecorder(meta={
         "screen": cfg.to_dict(), "layout": QUICK_LAYOUT, "seed": seed, "note": note,
@@ -119,6 +141,7 @@ def quick_calibration(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanva
                 continue
             h, w = frame.image.shape[:2]
             rec.meta["image_size"] = [w, h]
+            iris_log.append(iris_diameter_px(result.points, (w, h)))
             feats = extract_features(result.points, result.transform, (w, h))
             rec.add(frame.timestamp_ms, CALIB, t.idx, t.xy, result.points, result.transform, feats,
                     result.blendshapes)
@@ -131,8 +154,14 @@ def quick_calibration(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanva
             posture.append(posture_metrics(result.points, result.transform, (w, h)))
     rec.meta["blendshape_names"] = list(tracker.blendshape_names)
     if light:
-        rec.meta["lighting"] = {k: float(np.mean([s[k] for s in light])) for k in ("face", "background", "ratio")}
+        rec.meta["lighting"] = summarize_lighting(light)    # face, background, ratio and label, as calibrate stores
+    if tags is not None:
+        rec.meta["conditions"] = condition_tags.conditions_for(
+            tags, cfg, frame_size=tuple(rec.meta["image_size"]) if "image_size" in rec.meta else None,
+            iris_px=condition_tags.median_iris_px(iris_log), lighting_measured=rec.meta.get("lighting"))
     path = rec.save(QUICK_DIR) if record else Path("demo (not saved)")
+    if tags is not None:
+        condition_tags.print_tag_verdict(rec.meta["conditions"])
     x, y, idx_a = np.array(xs), np.array(ys, float), np.array(idx)
     if len(x) == 0 or missing_dots(idx_a, targets):
         return path
@@ -156,6 +185,8 @@ def calibrate_here(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanvas, 
             print(f"quick calibration: some dots had too few frames (blinks or lost face); saved {out.name}")
             message = "some dots were missed (blinks or lost face): press SPACE to try again"
             continue
+        if record:
+            condition_tags.run_report(out.path)
         report = out.report
         print(f"quick calibration: {QUICK_CONFIG} on {report['dots']} dots, {len(out.x)} frames, fit on its own "
               f"dots {report['mean_deg']:.1f} deg (worst {report['worst_deg']:.1f}); file: {out.path.name}")

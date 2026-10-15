@@ -51,7 +51,8 @@ from gaze_cursor.sinks.livetest_view import (
     result_screen)
 from gaze_cursor.sinks.overlay import FullscreenCanvas
 from gaze_cursor.sinks.posture_view import run_posture_check
-from gaze_cursor.sinks.quick_view import QUICK_DIR, QuickFit, calibrate_here
+from gaze_cursor.sinks import tags as condition_tags
+from gaze_cursor.sinks.quick_view import QUICK_DIR, QuickFit, calibrate_here, set_tags
 
 OOD_Z = 4.0  # warn when a live feature is this many calibration std-devs from its mean
 STAGES = ("camera read", "landmarks", "features + predict + filter", "draw + show")
@@ -72,9 +73,13 @@ def main() -> None:
                          "same lighting as the latest (or given) one, instead of that one alone (experimental)")
     ap.add_argument("--no-check", action="store_true",
                     help="(full calibration only) skip the position check and the live posture hints")
+    condition_tags.add_arguments(ap)
     args = ap.parse_args()
     cfg = ScreenConfig.from_system()
     quick = args.session is None and not args.latest
+    # resolved before the fullscreen canvas hides the terminal: pressing R later records a quick calibration
+    # even when the Run started from a saved full calibration
+    set_tags(condition_tags.resolve(args))       # refuses to record without a person id
 
     with Camera() as cam, FaceTracker() as tracker, FullscreenCanvas(cfg) as canvas:
         features, ref = "gaze", None

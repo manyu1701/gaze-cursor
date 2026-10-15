@@ -55,7 +55,9 @@ from gaze_cursor.sinks.cursor import (
     request_input_monitoring)
 from gaze_cursor.sinks.cursor_view import AMBER, GREEN, GREY, ChipTimer, draw_gaze_dot, draw_status
 from gaze_cursor.sinks.overlay import ClickThroughOverlay, FullscreenCanvas
-from gaze_cursor.sinks.quick_view import QUICK_DIR, QuickFit, calibrate_here
+from gaze_cursor.conditions import read_meta
+from gaze_cursor.sinks import tags as condition_tags
+from gaze_cursor.sinks.quick_view import QUICK_DIR, QuickFit, calibrate_here, set_tags
 
 NOTE = "quick calibration (Cursor)"
 AUTOSAVE_S = 300.0
@@ -71,6 +73,25 @@ def calibrate(cam: Camera, tracker: FaceTracker, cfg: ScreenConfig, record: bool
     if isinstance(out, str):
         print("Cursor mode always uses a fresh quick calibration (L is not available here).")
         return None
+    return out
+
+
+def session_conditions(tags: condition_tags.Tags, cfg: ScreenConfig, calib: str) -> dict:
+    """Conditions block of a Cursor log: the calibration's measured values (camera frame size, iris size,
+    lighting) with this run's tags, layout and code version; built without iris size if that file is gone."""
+    try:
+        block = read_meta(QUICK_DIR / calib).get("conditions") or {}
+    except (OSError, ValueError, KeyError):
+        block = {}
+    dist = block.get("distance") or {}
+    cam = block.get("camera") or {}
+    size = (cam["width"], cam["height"]) if cam.get("width") and cam.get("height") else None
+    iris = dist.get("iris_px")
+    out = condition_tags.conditions_for(tags, cfg, frame_size=size,
+                                        iris_px=float("nan") if iris is None else float(iris),
+                                        lighting_measured=block.get("lighting_measured"))
+    out["distance"]["measured_in"] = calib          # these were measured at that calibration, not in this run
+    out["lighting_measured_in"] = calib
     return out
 
 
@@ -160,6 +181,7 @@ def main() -> int:
                          "something changes, always keeps it on (default for --demo), never hides it")
     ap.add_argument("--warp-key", choices=sorted(WARP_KEYS), default=DEFAULT_WARP_KEY,
                     help="the modifier to tap (alone) to jump the cursor to your gaze")
+    condition_tags.add_arguments(ap)
     args = ap.parse_args()
     if not input_monitoring_granted():
         request_input_monitoring()
@@ -168,6 +190,9 @@ def main() -> int:
     cfg = ScreenConfig.from_system()
     demo = args.demo
     persist = not demo                      # a demo never writes anything about the face to disk
+    tags = None if demo else condition_tags.resolve(args)   # refuses to record without a person id
+    if tags is not None:
+        set_tags(tags)
     show_dot = args.show_dot or demo
     learn = not args.no_learn
     chip = args.chip or ("always" if demo else "auto")
@@ -194,6 +219,9 @@ def main() -> int:
                 remember(session, cfg)
         if demo:
             session.banner = "DEMO: nothing is saved"
+        else:
+            session.conditions = session_conditions(tags, cfg, session.calib)
+            condition_tags.print_tag_verdict(session.conditions)
         ref = SimpleNamespace(center=ref_center)
         print("Cursor mode on: tap Right Command to jump to your gaze; Cmd+Option+G on/off, "
               "Cmd+Option+R recalibrate, Cmd+Option+X quit.")

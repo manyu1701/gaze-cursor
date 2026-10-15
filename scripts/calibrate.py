@@ -38,6 +38,8 @@ from gaze_cursor.posture import (
 from gaze_cursor.sinks.guide_view import draw_summary, wait_for_key
 from gaze_cursor.sinks.overlay import FullscreenCanvas
 from gaze_cursor.sinks.posture_view import run_posture_check
+from gaze_cursor.sinks import tags as condition_tags
+from gaze_cursor.conditions import iris_diameter_px
 
 SETTLE_S = 0.7   # eyes travel to the new dot; not recorded
 RECORD_S = {"v1": 1.5, "v2": 1.0}  # error rises after ~1.2 s on a fixation, so v2 records less
@@ -138,6 +140,7 @@ def main() -> None:
                     help="save to data/dry_runs/ instead of data/sessions/, so a practice run can never "
                          "be mistaken for a real session")
     ap.add_argument("--note", default="", help='condition tag stored in the session, e.g. "evening, lamp"')
+    condition_tags.add_arguments(ap)
     args = ap.parse_args()
     cfg = ScreenConfig.from_system()
     print(f"screen: {cfg}")
@@ -149,6 +152,7 @@ def main() -> None:
         return
     if args.guided and not check_light(cfg, args.note, guided=True):
         return
+    tags = condition_tags.resolve(args)   # refuses to record without a person id
     seed = int(time.time()) % 2**31 if args.seed is None else args.seed
     record_s = RECORD_S[args.layout]
     plan = [(t.phase, t.idx, t.xy) for t in build_plan(cfg, args.layout, seed)]
@@ -174,6 +178,7 @@ def main() -> None:
         print(f"dry run: the session will be saved to {out_dir}, not used as a real session")
     posture_log: list[dict[str, float]] = []
     light_log: list[dict[str, float]] = []   # lighting is captured from the recorded frames themselves
+    iris_log: list[float] = []               # iris diameter in px per frame, for the distance estimate
     with Camera() as cam, FaceTracker() as tracker, FullscreenCanvas(cfg) as canvas:
         rec.meta["window"] = [*canvas.origin, *canvas.size]
         hidden = [p for _, _, p in plan if not canvas.visible(p)]
@@ -237,6 +242,7 @@ def main() -> None:
                     continue
                 h, w = frame.image.shape[:2]
                 rec.meta["image_size"] = [w, h]
+                iris_log.append(iris_diameter_px(result.points, (w, h)))
                 light_log.append(lighting_stats(cv2.cvtColor(frame.image, cv2.COLOR_BGR2GRAY), result.points))
                 if ref is not None:
                     posture_log.append(posture_metrics(result.points, result.transform, (w, h)))
@@ -255,8 +261,14 @@ def main() -> None:
         if lighting is not None:
             rec.meta["lighting"] = lighting
         rec.meta["face_images"] = save_images
+        rec.meta["conditions"] = condition_tags.conditions_for(
+            tags, cfg, frame_size=tuple(rec.meta["image_size"]) if "image_size" in rec.meta else None,
+            iris_px=condition_tags.median_iris_px(iris_log), lighting_measured=lighting)
         path = rec.save(out_dir)
         print(f"Saved {path}")
+        condition_tags.print_tag_verdict(rec.meta["conditions"])
+        if not args.dry_run:
+            condition_tags.run_report(path)
         if save_images and faces_path_for(path).exists():
             print(f"face images: {faces_path_for(path).name}, {faces_path_for(path).stat().st_size / 1e6:.1f} MB "
                   f"(local only)")

@@ -7,12 +7,21 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from gaze_cursor.config import ScreenConfig
+from gaze_cursor.sinks import tags as condition_tags
 from gaze_cursor.sinks.cursor import InputEvent
 from tests.test_features import _face
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def _tags_without_the_os(monkeypatch):
+    """No prompts, no ~/.gaze-cursor files, no OS or version-control calls in these tests."""
+    monkeypatch.setattr(condition_tags, "resolve", lambda *a, **k: condition_tags.Tags("p01", "lamp", "no", "upright"))
+    monkeypatch.setattr(condition_tags, "conditions_for", lambda tags, *a, **k: {"person_id": tags.person_id, "distance": {}})
 
 
 def _load():

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
+from gaze_cursor.conditions import model_version
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.filters import RUN_FILTER, make_filter
 from gaze_cursor.livetest import head_moved, px_per_deg, to_deg
@@ -64,11 +65,21 @@ class CursorSession:
     last_ms: float = 0.0
     banner: str = ""                    # e.g. "DEMO: nothing is saved", shown first on the chip
     calibrated_at: float = field(default_factory=time.time)   # epoch s of the 9 dots (carried over on resume)
+    conditions: dict | None = None      # the meta["conditions"] block of the recording (None: demo / tests)
+    model_versions: list[str | None] = field(default_factory=list)   # starting-state hash per calibration
 
     def __post_init__(self) -> None:
         self.smooth = make_filter(RUN_FILTER)
         self._set_range(self.x_train)
         self.calibrations.append([None, self.calib])
+        self.model_versions.append(self._model_version())
+
+    def _model_version(self) -> str | None:
+        """Hash of the starting model state (an OnlineRidge); None for a model that is not one."""
+        m = self.model
+        if not isinstance(m, OnlineRidge):
+            return None
+        return model_version(m.mean, m.scale, m.theta, m.P)
 
     def _set_range(self, x: np.ndarray) -> None:
         self.mu, self.sd = x.mean(axis=0), x.std(axis=0) + 1e-9
@@ -80,6 +91,7 @@ class CursorSession:
         self.dot = self.raw = None
         self.worst_z, self.last_good_ms = 0.0, -np.inf
         self.calibrations.append([None, calib])
+        self.model_versions.append(self._model_version())
         self.calibrated_at = time.time()
         self.learned = 0
 
@@ -134,7 +146,9 @@ class CursorSession:
             ok = float(self._learn_from_click(event))      # in the log, a click's "warped" column = learned
         exy = event.xy if event.xy is not None else (xy if xy is not None else (np.nan, np.nan))
         button = {"left": 1.0, "right": 2.0}.get(event.button or "", 0.0)
-        self.events.append([event.t_ms, float(EVENT_CODES[event.kind]), *exy, button, ok, float(self.enabled)])
+        n_updates = float(getattr(self.model, "n_updates", np.nan))   # model state at this event, for replay
+        self.events.append([event.t_ms, float(EVENT_CODES[event.kind]), *exy, button, ok, float(self.enabled),
+                            n_updates])
         return action, xy
 
     def _learn_from_click(self, event: InputEvent) -> bool:
@@ -195,7 +209,7 @@ class CursorSession:
     # --- record and replay ---------------------------------------------------------------------
     FRAME_COLUMNS = ("t_ms", "raw_x", "raw_y", "dot_x", "dot_y", "f0", "f1", "f2", "f3", "tracked",
                      "head_ratio", "head_dx_cm", "head_dy_cm", "enabled", "worst_z")
-    EVENT_COLUMNS = ("t_ms", "kind", "x", "y", "button", "warped", "enabled")
+    EVENT_COLUMNS = ("t_ms", "kind", "x", "y", "button", "warped", "enabled", "n_updates")
 
     def click_errors_deg(self) -> np.ndarray:
         """Per click: distance (deg) between the click and the median raw gaze in the label window.
@@ -211,7 +225,7 @@ class CursorSession:
         return np.array(out)
 
     def summary(self) -> dict:
-        e = np.array(self.events, float) if self.events else np.zeros((0, 7))
+        e = np.array(self.events, float) if self.events else np.zeros((0, len(self.EVENT_COLUMNS)))
         warps = e[e[:, 1] == EVENT_CODES["warp"]] if len(e) else e
         err = self.click_errors_deg()
         err = err[~np.isnan(err)]
@@ -225,6 +239,12 @@ class CursorSession:
                 "click_gaze_deg_mean": float(err.mean()) if len(err) else None,
                 "click_gaze_n": int(len(err)), "clicks_learned": self.learned}
 
+    def _conditions(self) -> dict | None:
+        """The conditions block with the first calibration's starting model hash filled in."""
+        if self.conditions is None:
+            return None
+        return {**self.conditions, "model_version": self.model_versions[0] if self.model_versions else None}
+
     def save(self, directory: Path) -> Path:
         """Write the whole session (atomically: a crash mid-write keeps the previous autosave)."""
         directory.mkdir(parents=True, exist_ok=True)
@@ -235,7 +255,9 @@ class CursorSession:
                 "screen": self.cfg.to_dict(), "started": self.started, "frame_columns": self.FRAME_COLUMNS,
                 "event_columns": self.EVENT_COLUMNS, "event_codes": EVENT_CODES,
                 "label_window_ms": LABEL_WINDOW_MS, "summary": self.summary(),
-                "event_notes": {"click.warped": "1 = the model learned from this click (learning on); warp rows: 1 = jumped"},
+                "event_notes": {"n_updates": "model update count AFTER this event (a learned click's row includes it)",
+                                "click.warped": "1 = the model learned from this click (learning on); warp rows: 1 = jumped"},
+                "conditions": self._conditions(), "model_versions": self.model_versions,
                 "learning": {"on": self.learn, "resumed": self.resumed, "gate_deg": GATE_DEG,
                              "forget": getattr(self.model, "forget", None)}}
         np.savez_compressed(tmp, frames=np.array(self.frames, float).reshape(-1, len(self.FRAME_COLUMNS)),
