@@ -214,7 +214,7 @@ def g(repo):
     _git(main, "commit", "-qm", "docs")
     notes = main.parent / "gaze-cursor-notes"
     notes.mkdir(exist_ok=True)
-    (notes / "PROGRESS.md").write_text("# Progress\n\n## Start here\n\n**Next:** record session 2.\n\nolder\n\n## Old\n")
+    (notes / "PROGRESS.md").write_text("# Progress\n\n## Start here\n\n**Next:** record session 2.\n\nOLDER-ENTRY-MARKER\n\n## Old\n")
     return guard, main
 
 
@@ -385,7 +385,7 @@ def test_session_start_gives_context(g, capsys) -> None:
     (main / "PLAN.md").write_text("# Plan\n**Status (old):** step 1 DONE. Step 2 DONE.\n")
     guard.session_start({"session_id": "s2", "cwd": str(main)})
     out = capsys.readouterr().out
-    assert "record session 2" in out and "older" not in out                # newest diary entry only
+    assert "record session 2" in out and "OLDER-ENTRY-MARKER" not in out               # newest diary entry only
     assert "round 4: clicks" in out
     assert "checkpoint" in out                                               # a commit now would be blocked
     assert "plan-audit last run: not recorded" in out
