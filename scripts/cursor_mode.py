@@ -55,6 +55,7 @@ from gaze_cursor.sinks.cursor import (
     request_input_monitoring)
 from gaze_cursor.sinks.cursor_view import AMBER, GREEN, GREY, ChipTimer, draw_gaze_dot, draw_status
 from gaze_cursor.sinks.overlay import ClickThroughOverlay, FullscreenCanvas
+from gaze_cursor import backfill
 from gaze_cursor.conditions import read_meta
 from gaze_cursor.sinks import tags as condition_tags
 from gaze_cursor.sinks.quick_view import QUICK_DIR, QuickFit, calibrate_here, set_tags
@@ -80,16 +81,27 @@ def session_conditions(tags: condition_tags.Tags, cfg: ScreenConfig, calib: str)
     """Conditions block of a Cursor log: the calibration's measured values (camera frame size, iris size,
     lighting) with this run's tags, layout and code version; built without iris size if that file is gone."""
     try:
-        block = read_meta(QUICK_DIR / calib).get("conditions") or {}
+        calib_meta = read_meta(QUICK_DIR / calib)
     except (OSError, ValueError, KeyError):
-        block = {}
+        calib_meta = {}
+    block = calib_meta.get("conditions") or {}
     dist = block.get("distance") or {}
     cam = block.get("camera") or {}
     size = (cam["width"], cam["height"]) if cam.get("width") and cam.get("height") else None
     iris = dist.get("iris_px")
+    lighting = block.get("lighting_measured")
+    if size is None and calib_meta.get("image_size"):     # a calibration made before the tags existed
+        size = tuple(calib_meta["image_size"])
+    if iris is None and calib_meta:                       # ... measure its iris from its own landmarks
+        try:
+            iris = backfill.median_iris_px(QUICK_DIR / calib)
+        except (OSError, ValueError, KeyError):
+            iris = None
+        iris = None if iris is not None and iris != iris else iris
+    lighting = lighting or calib_meta.get("lighting")
     out = condition_tags.conditions_for(tags, cfg, frame_size=size,
                                         iris_px=float("nan") if iris is None else float(iris),
-                                        lighting_measured=block.get("lighting_measured"))
+                                        lighting_measured=lighting)
     out["distance"]["measured_in"] = calib          # these were measured at that calibration, not in this run
     out["lighting_measured_in"] = calib
     return out

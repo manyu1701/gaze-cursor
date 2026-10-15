@@ -119,6 +119,24 @@ def test_cursor_mode_warps_on_the_hotkey_logs_clicks_and_quits(tmp_path, monkeyp
     assert meta2["learning"]["resumed"] and meta2["summary"]["frames"] > 0
 
 
+def test_resuming_a_calibration_made_before_tags_measures_its_frame_size_and_iris(tmp_path, monkeypatch) -> None:
+    gc = _load()
+    pts = np.zeros((478, 3), np.float32)
+    for ring, cx in (((469, 470, 471, 472), 0.35), ((474, 475, 476, 477), 0.65)):
+        for k, (dx, dy) in zip(ring, ((-0.01, 0), (0, -0.01), (0.01, 0), (0, 0.01))):
+            pts[k] = (cx + dx, 0.5 + dy, 0)
+    np.savez_compressed(tmp_path / "old.npz", points=np.stack([pts] * 3),
+                        meta=json.dumps({"image_size": [1280, 720], "lighting": {"label": "front-lit"}}))
+    seen = {}
+    monkeypatch.setattr(gc, "QUICK_DIR", tmp_path)
+    monkeypatch.setattr(gc.condition_tags, "conditions_for",
+                        lambda tags, cfg, **k: seen.update(k) or {"distance": {}})
+    out = gc.session_conditions(condition_tags.Tags("p01"), ScreenConfig(), "old.npz")
+    assert seen["frame_size"] == (1280, 720) and seen["iris_px"] > 0
+    assert seen["lighting_measured"] == {"label": "front-lit"}
+    assert out["distance"]["measured_in"] == "old.npz"
+
+
 def test_cursor_mode_explains_the_permission_when_missing(monkeypatch, capsys) -> None:
     gc = _load()
     monkeypatch.setattr(gc, "input_monitoring_granted", lambda: False)
