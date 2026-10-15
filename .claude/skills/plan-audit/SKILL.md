@@ -5,7 +5,7 @@ description: Use at the start of a working session, before closing a milestone, 
 
 # Audit work against PLAN.md
 
-Read PLAN.md, CLAUDE.md, the last ~30 commits (`git log --oneline -30`), RESULTS.md and the PREREGISTRATIONS.md section headings. Then report, as a short table plus a recommendation:
+Read PLAN.md, CLAUDE.md, the last ~30 commits (`git log --oneline -30`), RESULTS.md, the PREREGISTRATIONS.md section headings and the status column of `docs/research/ACTIONS.md` (flag R-actions marked adopted that PLAN.md does not mention, and PLAN steps that started without their R-actions being considered). Then report, as a short table plus a recommendation:
 
 1. **Current milestone and step**, and whether its done-when is met (with evidence).
 2. **Open items with no home:** steps marked open / carried forward / stretch that no milestone schedules. Propose where each goes, or that it is explicitly dropped, with a reason.

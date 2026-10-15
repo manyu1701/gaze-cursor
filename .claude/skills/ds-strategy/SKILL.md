@@ -8,7 +8,7 @@ description: Use when planning any new step or milestone, at milestone boundarie
 The plan says what to build next; this skill asks what the project should be learning from, and what it is leaving on the table. The author is a data scientist and wants every step judged from this angle too. Run it while planning a step (before the plan is shown to the author) and at milestone boundaries.
 
 ## 1. Read the state
-PLAN.md (current milestone and step), RESULTS.md, the latest RESULT sections in PREREGISTRATIONS.md, CLAUDE.md "Learning loop and data strategy", and what data exists (`data/sessions`, `data/quick`, results.csv modes). Do not open face images.
+PLAN.md (current milestone and step), RESULTS.md, the latest RESULT sections in PREREGISTRATIONS.md, CLAUDE.md "Learning loop and data strategy", and what data exists (`data/sessions`, `data/quick`, results.csv modes). Then the research base: `docs/research/ACTIONS.md` (which R-actions belong to this step or are still open) and the brief(s) for the topics the step touches (`docs/research/README.md` maps problems to briefs). Do not open face images.
 
 ## 2. Ask the questions (answer each in one or two lines; "n/a" is allowed)
 
@@ -36,4 +36,4 @@ PLAN.md (current milestone and step), RESULTS.md, the latest RESULT sections in 
 13. **Privacy and consent by design:** if other people's sessions are added, what stays on-device, what (anonymous numeric features and labels only, opt-in) could be shared, and could learning be federated?
 
 ## 3. Output
-A short table of **opportunities**: what, why (one line, with evidence from RESULTS / data where possible), which level or area, value (high / medium / low), effort (S / M / L), and where it belongs (this step, a later PLAN step, a new pre-registered round, or parked). Then **at most three recommendations** for the current step. Present them to the author with the plan; never change PLAN.md or code because of this skill without the author's agreement. Claims that would become findings go through `preregister`.
+A short table of **opportunities**: what, why (one line, with evidence from RESULTS / data where possible, and the R-number and brief when it comes from `docs/research`), which level or area, value (high / medium / low), effort (S / M / L), and where it belongs (this step, a later PLAN step, a new pre-registered round, or parked). Then **at most three recommendations** for the current step. Present them to the author with the plan; never change PLAN.md or code because of this skill without the author's agreement. Claims that would become findings go through `preregister`.

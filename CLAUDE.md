@@ -109,6 +109,15 @@ These exist because two slips happened on 2026-10-13 (two sessions on diverged b
 - **Permissions:** force-push, `reset --hard`, `git clean`, branch deletion and history rewrites are denied; `rm -r`, push, merge and rebase ask first.
 - Keep pre-registration for claims; small engineering choices do not need a frozen protocol.
 
+## Research base (added 2026-10-15)
+
+`docs/research/` holds the science behind the project (eye physiology, camera and optics, gaze methods, ML and statistics, interaction design, people and privacy), each topic written as problem -> science -> what it means for us -> what to try (`R` numbers). Start with its README's headline paragraph.
+
+- **Before planning a step, read the brief(s) for the topics it touches** (the README's table maps our problems to briefs) and say in the plan which findings and R-actions apply.
+- **`docs/research/ACTIONS.md`** lists every R-action with where it belongs in the plan and a status. `ds-strategy` / `ds-lead` propose the relevant ones; the author decides; when one is adopted, done or dropped, update its status there in the same commit as the PLAN change.
+- The science gives hypotheses, not results: anything about *our* tracker still comes from our data, and claims go through `preregister`. Exploratory scripts that support a brief (e.g. `scripts/explore_precision.py`) print only.
+- If our results contradict a brief, say so and correct the brief (with the evidence); keep briefs short, sourced, and free of personal data.
+
 ## Conventions
 
 - Typed Python, small pure functions where possible, docstrings on public functions.
