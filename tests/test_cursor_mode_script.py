@@ -172,3 +172,68 @@ def test_demo_mode_writes_nothing_and_never_touches_the_saved_calibration(tmp_pa
     assert calls == [False]                                              # calibrated, with recording off
     assert sorted(p.name for p in tmp_path.iterdir()) == before and rows == []   # nothing new written
     assert "nothing was saved" in capsys.readouterr().out
+
+
+def test_cursor_mode_quits_by_itself_when_no_face_is_seen_for_five_minutes(tmp_path, monkeypatch) -> None:
+    gc = _load()
+    clock = {"s": 1000.0}
+    processed = {"n": 0}
+
+    class Cam:
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def read(self):
+            clock["s"] += 1.0                       # one frame per simulated second keeps the test short
+            return SimpleNamespace(image=np.zeros((720, 1280, 3), np.uint8), timestamp_ms=int(clock["s"] * 1000))
+
+    class Tracker:
+        blendshape_names = tuple(f"b{i}" for i in range(52))
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def process(self, f):
+            processed["n"] += 1
+            return None
+
+    class Cursor:
+        def __init__(self, size, detector=None): pass
+        def poll(self): return []
+        def close(self): pass
+
+    class Overlay:
+        def __init__(self, cfg): self.safe_top = 40
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def blank(self): return np.zeros((956, 1470, 4), np.uint8)
+        def show(self, img): pass
+        def pump(self): pass
+        def restore_policy(self): pass
+
+    x = np.random.default_rng(0).normal(size=(60, 4))
+    fit = SimpleNamespace(model=Model(), x=x, y=np.tile([700.0, 450.0], (60, 1)), posture=[{"dummy": 0.0}],
+                          path=Path("session_quick.npz"))
+    notes = []
+    monkeypatch.setattr(gc, "Camera", Cam)
+    monkeypatch.setattr(gc, "FaceTracker", Tracker)
+    monkeypatch.setattr(gc, "MacCursor", Cursor)
+    monkeypatch.setattr(gc, "ClickThroughOverlay", Overlay)
+    monkeypatch.setattr(gc, "calibrate", lambda cam, tracker, cfg: fit)
+    monkeypatch.setattr(gc, "input_monitoring_granted", lambda: True)
+    monkeypatch.setattr(gc, "QUICK_DIR", tmp_path)
+    monkeypatch.setattr(gc, "append_rows", lambda rows: None)
+    monkeypatch.setattr(gc, "notify", notes.append)
+    chips = []
+    monkeypatch.setattr(gc, "draw_status", lambda img, lines, top: chips.append((clock["s"] - 1000.0, lines)))
+    monkeypatch.setattr(gc.ScreenConfig, "from_system", classmethod(lambda cls: ScreenConfig()))
+    monkeypatch.setattr(gc.Reference, "from_current", classmethod(lambda cls, p: SimpleNamespace(center={})))
+    monkeypatch.setattr(gc.time, "monotonic", lambda: clock["s"])
+    monkeypatch.setattr(sys, "argv", ["cursor_mode.py", "--fresh"])
+
+    assert gc.main() == 0
+    assert any("battery" in n for n in notes)
+    texts = [(t, " | ".join(s for s, _ in lines)) for t, lines in chips if lines]
+    assert any("low power" in s for t, s in texts if 30 <= t < 240)          # asleep: said once
+    assert any("closing in" in s for t, s in texts if 240 <= t)              # last minute: a countdown
+    assert not any("closing in" in s for t, s in texts if t < 239)
+    assert 300 <= clock["s"] - 1000.0 < 302                 # stopped right after the 5 minutes
+    assert processed["n"] < 60 + 270 // 10 + 5              # awake 30 s at full rate, then 1 frame in 10
+    assert list(tmp_path.glob("cursor_*.npz"))              # and the session was saved

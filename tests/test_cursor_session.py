@@ -87,3 +87,23 @@ def test_clicks_are_scored_against_the_gaze_just_before_and_everything_is_saved(
     assert d["events"].shape == (2, len(CursorSession.EVENT_COLUMNS))
     assert d["events"][1, 1] == EVENT_CODES["click"] and meta["calibration"] == "session_q.npz"
     assert meta["summary"]["clicks"] == 1
+
+
+def test_status_key_ignores_the_running_time_but_changes_with_what_matters() -> None:
+    s = make()
+    t = feed(s, 0, 5)
+    k0 = s.status_key()
+    feed(s, t + 33, 2000)                       # ~66 s later: the 'on N min' info line changes, the key must not
+    assert s.status_key() == k0
+    s.handle(InputEvent("toggle", 0), 0)        # gaze warp OFF
+    assert s.status_key() != k0
+
+
+def test_a_lasting_warning_is_not_a_one_off_message_or_the_banner() -> None:
+    s = make()
+    feed(s, 0, 5)
+    s.banner = "DEMO: nothing is saved"
+    s.message = "no jump: gaze is stale"
+    assert not s.lasting_warning()
+    s.dot = None                                 # face lost: lasts until it is back
+    assert s.lasting_warning()

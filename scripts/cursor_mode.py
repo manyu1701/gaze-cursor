@@ -14,11 +14,18 @@ NOTHING written to disk (no calibration recording, no session log, no saved cali
 Hotkeys (work in any app): tap Right Command = jump to gaze; Cmd+Option+G = on / off;
 Cmd+Option+R = recalibrate; Cmd+Option+X (or Ctrl+C here) = quit.
 
+The status chip (top-right) is hidden most of the time: it appears for a few seconds when something changes
+(start, on/off, a refused jump, a warning), comes back every minute while a warning lasts, and counts down
+before the auto-quit. --chip always keeps it on (Demo does), never hides it.
+
+No face for 30 s: low power (the landmarker runs on 1 frame in 10); no face for 5 min: quits and saves
+(constants in src/gaze_cursor/idle.py).
+
 Every frame (gaze, head shift) and every hotkey / click is saved to data/quick/cursor_<time>.npz
 (positions only, no images) and summarised in data/results.csv, so self-recalibration from clicks can be
 built and judged offline. Needs Input Monitoring permission for Terminal (it explains how).
 
-  uv run scripts/cursor_mode.py [--show-dot] [--fresh] [--no-learn] [--demo] [--warp-key right_command|right_option]
+  uv run scripts/cursor_mode.py [--show-dot] [--fresh] [--no-learn] [--demo] [--chip auto|always|never] [--warp-key right_command|right_option]
 """
 
 from __future__ import annotations
@@ -37,6 +44,7 @@ from gaze_cursor.cursor_session import CursorSession
 from gaze_cursor.eval.configs import REGISTRY
 from gaze_cursor.eval.results_log import append_rows, now
 from gaze_cursor.features import assemble, extract_features
+from gaze_cursor.idle import IdleTimer
 from gaze_cursor.landmarks import FaceTracker
 from gaze_cursor.livetest import head_shift
 from gaze_cursor.online import OnlineRidge
@@ -45,12 +53,14 @@ from gaze_cursor.quick import QUICK_CONFIG
 from gaze_cursor.sinks.cursor import (
     DEFAULT_WARP_KEY, PERMISSION_HELP, WARP_KEYS, HotkeyDetector, MacCursor, input_monitoring_granted,
     request_input_monitoring)
-from gaze_cursor.sinks.cursor_view import AMBER, GREEN, GREY, draw_gaze_dot, draw_status
+from gaze_cursor.sinks.cursor_view import AMBER, GREEN, GREY, ChipTimer, draw_gaze_dot, draw_status
 from gaze_cursor.sinks.overlay import ClickThroughOverlay, FullscreenCanvas
 from gaze_cursor.sinks.quick_view import QUICK_DIR, QuickFit, calibrate_here
 
 NOTE = "quick calibration (Cursor)"
 AUTOSAVE_S = 300.0
+CHIP_SECONDS = 4.0          # in --chip auto, how long the status chip stays after something changed
+CHIP_REMIND_S = 60.0        # ... and how often it comes back while a lasting warning is on
 LEVEL_COLORS = {"ok": GREEN, "warn": AMBER, "off": GREY}
 
 
@@ -111,9 +121,10 @@ def process_frame(session: CursorSession, frame, result, names: tuple[str, ...],
     session.frame(t, x, shift)
 
 
-def draw(overlay: ClickThroughOverlay, session: CursorSession, show_dot: bool) -> None:
+def draw(overlay: ClickThroughOverlay, lines: list[tuple[str, str]], session: CursorSession,
+         show_dot: bool) -> None:
     img = overlay.blank()
-    draw_status(img, [(t, LEVEL_COLORS[lvl]) for t, lvl in session.status_lines()], overlay.safe_top)
+    draw_status(img, [(t, LEVEL_COLORS[lvl]) for t, lvl in lines], overlay.safe_top)
     if show_dot and session.enabled and session.dot is not None:
         draw_gaze_dot(img, (float(session.dot[0]), float(session.dot[1])))
     overlay.show(img)
@@ -144,6 +155,9 @@ def main() -> int:
     ap.add_argument("--no-learn", action="store_true", help="keep the model frozen (do not learn from clicks)")
     ap.add_argument("--demo", action="store_true",
                     help="show a friend: fresh calibration, gaze ring on, nothing is saved to disk")
+    ap.add_argument("--chip", choices=("auto", "always", "never"), default=None,
+                    help="status chip in the top-right corner: auto (default) shows it for a few seconds when "
+                         "something changes, always keeps it on (default for --demo), never hides it")
     ap.add_argument("--warp-key", choices=sorted(WARP_KEYS), default=DEFAULT_WARP_KEY,
                     help="the modifier to tap (alone) to jump the cursor to your gaze")
     args = ap.parse_args()
@@ -156,6 +170,7 @@ def main() -> int:
     persist = not demo                      # a demo never writes anything about the face to disk
     show_dot = args.show_dot or demo
     learn = not args.no_learn
+    chip = args.chip or ("always" if demo else "auto")
     for sig in (signal.SIGHUP, signal.SIGTERM):
         signal.signal(sig, stop_on_signal)
     with Camera() as cam, FaceTracker() as tracker:
@@ -186,10 +201,19 @@ def main() -> int:
         try:
             with ClickThroughOverlay(cfg) as overlay:
                 last_lines = None
+                chip_timer = ChipTimer(chip, CHIP_SECONDS, CHIP_REMIND_S)
                 next_save = time.monotonic() + AUTOSAVE_S
+                idle = IdleTimer(time.monotonic())
                 while True:
                     frame = cam.read()
-                    result = tracker.process(frame) if frame is not None else None
+                    now_s = time.monotonic()
+                    # Asleep (no face for 30 s): the landmarker runs on 1 frame in 10, the rest is skipped.
+                    result = tracker.process(frame) if frame is not None and idle.process_this_frame(now_s) else None
+                    idle.update(now_s, result is not None)
+                    if idle.should_quit(now_s):
+                        print("No face for 5 min: quitting to save battery (the session is saved).")
+                        notify("No face for 5 min: stopped to save battery")
+                        break
                     process_frame(session, frame, result, names, ref)
                     action = "none"
                     for event in cursor.poll():
@@ -200,7 +224,7 @@ def main() -> int:
                             break
                     if action == "quit":
                         break
-                    if persist and time.monotonic() > next_save:
+                    if persist and now_s > next_save:
                         session.save(QUICK_DIR)
                         remember(session, cfg)
                         next_save = time.monotonic() + AUTOSAVE_S
@@ -214,9 +238,13 @@ def main() -> int:
                                 remember(session, cfg)
                         last_lines = None
                         continue
-                    lines = session.status_lines()
+                    nap = idle.message(now_s)             # low power, then a countdown to the auto-quit
+                    extra = [(nap, "warn")] if nap else []
+                    key = session.status_key() + tuple(extra)
+                    shown = chip_timer.visible(now_s, key, remind=session.lasting_warning())
+                    lines = (session.status_lines() + extra) if shown else []
                     if show_dot or lines != last_lines:   # redraw only when something changed
-                        draw(overlay, session, show_dot)
+                        draw(overlay, lines, session, show_dot)
                         last_lines = lines
                     else:
                         overlay.pump()

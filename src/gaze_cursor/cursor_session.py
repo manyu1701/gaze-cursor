@@ -182,6 +182,16 @@ class CursorSession:
             lines.append((f"using your calibration from {self.resumed}", "off"))
         return lines
 
+    def status_key(self) -> tuple[tuple[str, str], ...]:
+        """The status lines that matter, without the running 'on N min' / 'using your calibration' info:
+        when this changes the chip is worth showing (it is otherwise hidden, see ``--chip``)."""
+        return tuple(l for l in self.status_lines() if not l[0].startswith(("on ", "using your")))
+
+    def lasting_warning(self) -> bool:
+        """A warning that stays true until you act (moved, face lost), not a one-off message about a jump."""
+        return any(lvl == "warn" and text != self.banner and not text.startswith("no jump")
+                   for text, lvl in self.status_key())
+
     # --- record and replay ---------------------------------------------------------------------
     FRAME_COLUMNS = ("t_ms", "raw_x", "raw_y", "dot_x", "dot_y", "f0", "f1", "f2", "f3", "tracked",
                      "head_ratio", "head_dx_cm", "head_dy_cm", "enabled", "worst_z")

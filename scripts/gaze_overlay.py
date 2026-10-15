@@ -34,6 +34,7 @@ from gaze_cursor.capture import Camera
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.eval.session import latest_session, load_session
 from gaze_cursor.features import FEATURE_SETS, assemble, extract_features
+from gaze_cursor.idle import IdleTimer
 from gaze_cursor.filters import RUN_FILTER, make_filter
 from gaze_cursor.eval.results_log import append_rows, now
 from gaze_cursor.landmarks import FaceTracker
@@ -114,11 +115,18 @@ def main() -> None:
         stats = LiveStats()
         test: LiveTest | None = None
         timing: list[list[float]] = []   # per frame: monotonic ms at the 5 stage boundaries
+        idle = IdleTimer(time.monotonic())
         while True:
             t0 = time.monotonic() * 1000
             frame = cam.read()
             t1 = time.monotonic() * 1000
-            result = tracker.process(frame) if frame is not None else None
+            # Asleep (no face for 30 s): the landmarker runs on 1 frame in 10. After 5 min: quit.
+            result = tracker.process(frame) if frame is not None and idle.process_this_frame(t1 / 1000) else None
+            idle.update(t1 / 1000, result is not None, busy=test is not None)   # never sleep during a live test
+            nap = idle.message(t1 / 1000)
+            if idle.should_quit(t1 / 1000):
+                print("No face for 5 min: quitting to save battery.")
+                break
             t2 = time.monotonic() * 1000
             metrics, x, raw = None, None, None
             if frame is not None and result is not None:
@@ -136,7 +144,7 @@ def main() -> None:
                 test.update(frame.timestamp_ms, raw, dot if raw is not None else None, shift, x)
             img = canvas.blank()
             # Panels first, so a target box under a panel is still drawn on top of it.
-            draw_panel(canvas, img, live_lines(stats, cfg, shift, worst_z), "left")
+            draw_panel(canvas, img, live_lines(stats, cfg, shift, worst_z) + ([(nap, P_AMBER)] if nap else []), "left")
             if test is not None:
                 draw_panel(canvas, img, test.lines(), "right")
                 test.draw(canvas, img, time.monotonic() * 1000)
