@@ -18,12 +18,12 @@ Use for claims, not for every tweak. A small engineering choice (a UI default, a
 - **Reported, not criteria:** secondary numbers.
 
 ## 2. Freeze
-1. Commit the protocol ALONE first (message: "Pre-register HN: ..."), before any evaluation data is recorded. Record the commit hash in the section.
+1. Commit the protocol ALONE first (the commit hook blocks a new protocol committed with other files, and a new `--preregistered...` flag while no open protocol is committed) (message: "Pre-register HN: ..."), before any evaluation data is recorded. Record the commit hash in the section.
 2. Implement the evaluation with a guarded entry point (e.g. `--preregistered-N`) that refuses until the data rule is met and is meant to run once. Add tests that plant a known effect (detected) and a null (not detected).
 3. Commit the code before any evaluation session.
 
 ## 3. Collect and run
 - New sessions go through the `session-intake` skill (integrity only, no model fitted).
-- When the data rule is met, run the guarded command exactly once. Append the RESULT (numbers, verdict, caveats) to PREREGISTRATIONS.md; log rows with `confirmatory=1`. Then the `checkpoint` skill.
+- When the data rule is met, run the guarded command exactly once (the hook blocks it until every recording went through `session-intake`, and blocks a second run; `CONFIRMATORY_RERUN="reason"` only with the author's OK). Append the RESULT (numbers, verdict, caveats) to PREREGISTRATIONS.md; log rows with `confirmatory=1`. Then the `checkpoint` skill.
 
 PREREGISTRATIONS.md is append-only (enforced by a hook): amendments are new dated notes, made before the relevant data exists, explaining what changed and why.

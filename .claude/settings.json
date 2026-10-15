@@ -44,7 +44,7 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "python3", "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.py", "pre_commit"], "timeout": 300 }
+          { "type": "command", "command": "python3", "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.py", "pre_bash"], "timeout": 300 }
         ]
       },
       {
@@ -59,6 +59,25 @@
         "matcher": "Agent|Task",
         "hooks": [
           { "type": "command", "command": "python3", "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.py", "review_record"], "timeout": 30 }
+        ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          { "type": "command", "command": "python3", "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.py", "skill_record"], "timeout": 30 }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "python3", "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.py", "post_bash"], "timeout": 30 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "python3", "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.py", "prompt_record"], "timeout": 15 }
         ]
       }
     ],

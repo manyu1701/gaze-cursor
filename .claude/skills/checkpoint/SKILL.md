@@ -16,7 +16,7 @@ PLAN.md's "Checkpoints" section defines when this applies. Within a written step
 1. PLAN.md: update the step's **Status** line (date, what is done, what is open, numbers with CIs where they exist).
 2. Private progress notes: what was done, decisions and who made them, gotchas, next steps.
 3. If a pre-registered test ran: its RESULT goes into PREREGISTRATIONS.md (append only) and RESULTS.md via the `results-update` skill.
-4. Commit (the pre-commit hook runs the tests). Push only if the author has asked for pushes in this session.
+4. Commit (the pre-commit hook runs the tests; a commit that adds a DONE to a Status line is blocked unless this skill ran since the last commit). Push only if the author has asked for pushes in this session.
 
 ## 3. Stop and report
 Reply to the author in this shape, plain words, no jargon without a gloss:

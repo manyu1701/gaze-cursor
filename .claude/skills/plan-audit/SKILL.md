@@ -14,5 +14,6 @@ Read PLAN.md, CLAUDE.md, the last ~30 commits (`git log --oneline -30`), RESULTS
 5. **Stale text:** statements in PLAN.md / CLAUDE.md contradicted by later results or decisions.
 6. **Active pre-registrations:** which are frozen and waiting for data, what data is still needed, and any risk to them.
 7. **Process risks:** parallel sessions or diverged branches, uncommitted work, tests failing.
+8. **The guard itself** (before closing a milestone): run `python3 .claude/hooks/guard.py doctor`; list the overrides logged in `.claude/state/review_skips.log` and `gate_overrides.log` since the last milestone; propose dropping a rule that only caused friction, or adding one where a real slip got through.
 
 Do not edit PLAN.md during the audit. Present the findings and proposed diff, and apply it only after the author agrees.
