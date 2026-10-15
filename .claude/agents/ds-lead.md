@@ -2,6 +2,7 @@
 name: ds-lead
 description: Proactive data-science and ML-engineering advisor. Ask it when planning a step or milestone, or after a result, to get a second opinion on what the project should be doing that it is not (learning loops across sessions and people, data strategy, generalisation, labels, monitoring, model lifecycle, privacy). Read-only; it proposes, never edits.
 tools: Read, Grep, Glob, Bash
+memory: project
 model: opus
 ---
 
