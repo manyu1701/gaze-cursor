@@ -34,7 +34,7 @@ def test_rows_report_tags_person_and_legacy_state(roots) -> None:
     assert legacy.legacy and legacy.tags == 0 and legacy.tags_verdict == "warn" and legacy.person_id == ""
     backfilled = by["session_20261012_080000.npz"]
     assert backfilled.legacy and backfilled.backfilled and backfilled.person_id == "p01"
-    assert backfilled.tags == 9 and backfilled.tags_verdict == "pass"   # a complete sidecar passes
+    assert backfilled.tags == 8 and backfilled.tags_verdict == "warn"   # its distance is an estimate, not a tag
 
 
 def test_a_sidecar_without_person_id_warns_and_never_fails(roots) -> None:
@@ -43,7 +43,7 @@ def test_a_sidecar_without_person_id_warns_and_never_fails(roots) -> None:
     block.pop("person_id")
     sidecar.write_text(json.dumps(block))
     row = next(r for r in catalog.scan(roots) if r.file == "session_20261012_080000.npz")
-    assert row.tags == 8 and row.tags_verdict == "warn" and row.person_id == ""
+    assert row.tags == 7 and row.tags_verdict == "warn" and row.person_id == ""
 
 
 def test_cursor_rows_come_from_the_summary_without_loading_arrays(roots) -> None:
@@ -90,7 +90,7 @@ def test_totals_and_tag_completeness(roots) -> None:
     assert t["targets"] == 16   # 4 per calibration x (3 + the Cursor calibration); not the practice task
     assert t["cursor_hours"] == pytest.approx(1.5)
     tc = summaries.tag_completeness(rows)
-    assert tc["n"] == 7 and tc["complete"] == 2 and tc["own_block"] == 1 and tc["backfilled"] == 1
+    assert tc["n"] == 7 and tc["complete"] == 1 and tc["own_block"] == 1 and tc["backfilled"] == 1
     assert tc["with_person_id"] == 2 and tc["persons"] == ["p01"]
     assert sum(tc["histogram"]) == 7 and len(tc["histogram"]) == tc["n_checked"] + 1
 
@@ -200,7 +200,7 @@ def test_quality_cache_is_invalidated_by_a_new_sidecar_and_by_changed_grading_co
     side = roots.quick / "session_20261014_095500.conditions.json"
     side.write_text(json.dumps({**tagged_block(), "backfilled": True}))
     fresh = quality.report_for(roots, sid)
-    assert fresh["tags"] == 9 and fresh["overall"] == "pass"
+    assert fresh["tags"] == 8 and fresh["overall"] == "warn"      # backfilled: its distance is not a measured tag
     monkeypatch.setattr(quality, "CODE_VERSION", "changed-thresholds")
     cache_before = json.loads(roots.cache.with_name("dashboard_quality.json").read_text())[sid]["stamp"]
     quality.report_for(roots, sid)

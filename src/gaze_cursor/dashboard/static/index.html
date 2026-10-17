@@ -174,7 +174,7 @@ pages.sessions = async () => {
       h("div", {class: "scroll"}, h("table", null, h("thead", null, head), h("tbody", null, shown.map(r =>
         h("tr", {class: "link", onclick: () => { location.hash = "#/session/" + encodeURIComponent(r.id); }},
           h("td", null, when(r.started)), h("td", null, KIND[r.kind] || r.kind), h("td", null, r.file, r.error ? pill("fail", r.error) : null),
-          h("td", null, r.person_id || "–"), h("td", null, r.lighting || r.lighting_tag || "–"),
+          h("td", null, r.person_id || "–"), h("td", null, r.lighting_tag || r.lighting || "–"),
           h("td", null, pill(r.tags_verdict, r.tags + "/" + NC)), h("td", null, r.targets || "–"), h("td", null, r.minutes ? fmt(r.minutes, 1) : "–"),
           h("td", null, r.kind === "cursor" ? `${r.clicks} (${r.clicks_learned} learned)` : "–"), h("td", {class: "muted small"}, r.note || "")))))));
   }
@@ -187,7 +187,7 @@ pages.session = async id => {
   view.append(h("div", {class: "grid"},
     stat(KIND[r.kind] || r.kind, "kind", when(r.started)), stat(r.targets || "–", "targets", `${int(r.frames)} frames · ${fmt(r.minutes, 1)} min`),
     stat(r.tags + "/" + d.n_checked, "condition tags", r.legacy ? (r.backfilled ? "from a backfilled sidecar" : "legacy: no tags were recorded") : "own conditions block"),
-    stat(r.person_id || "–", "person", `lighting ${r.lighting || r.lighting_tag || "–"} · glasses ${r.glasses || "–"}`)));
+    stat(r.person_id || "–", "person", `lighting ${r.lighting_tag || r.lighting || "–"} · glasses ${r.glasses || "–"}`)));
   if (r.note) view.append(card("Note", r.note));
   if (r.kind === "cursor") view.append(card("Cursor mode summary", table(["Metric", "Value"], [
     {cells: ["Clicks", int(r.clicks)]}, {cells: ["Learned from", int(r.clicks_learned)]},

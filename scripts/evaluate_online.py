@@ -44,7 +44,7 @@ def main() -> int:
                    help="which logs count for round 4 (minutes, click counts); prints no errors, logs nothing")
     ap.add_argument("--no-log", dest="log", action="store_false")
     args = ap.parse_args()
-    logs = sorted(QUICK_DIR.glob("cursor_*.npz"))
+    logs = sorted(p for p in QUICK_DIR.glob("cursor_*.npz") if not p.name.endswith(".faces.npz"))   # face crops are not logs
     if args.status:
         n = 0
         for p in logs:

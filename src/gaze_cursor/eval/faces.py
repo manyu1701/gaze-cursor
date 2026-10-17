@@ -62,15 +62,16 @@ def estimate_mb(n_frames: int, side: int = 316, quality: int = QUALITY) -> tuple
 
 
 def save_faces(path: Path, jpegs: list[bytes | None], boxes: list[tuple[int, int, int, int] | None],
-               quality: int = QUALITY) -> Path:
-    """Write the sidecar (``offsets``, concatenated JPEG ``data``, per-row ``box``) with mode 0600."""
+               quality: int = QUALITY, extra: dict[str, np.ndarray] | None = None) -> Path:
+    """Write the sidecar (``offsets``, concatenated JPEG ``data``, per-row ``box``) with mode 0600.
+    ``extra``: more per-row arrays stored beside them (e.g. the click each crop belongs to)."""
     n = len(jpegs)
     offsets = np.zeros(n + 1, dtype=np.int64)
     for i, j in enumerate(jpegs):
         offsets[i + 1] = offsets[i] + (len(j) if j else 0)
     data = np.frombuffer(b"".join(j for j in jpegs if j), dtype=np.uint8) if offsets[-1] else np.zeros(0, np.uint8)
     box = np.array([b if b else (-1, -1, -1, -1) for b in boxes], dtype=np.int32).reshape(n, 4)
-    np.savez(path, offsets=offsets, data=data, box=box, quality=np.int16(quality))
+    np.savez(path, offsets=offsets, data=data, box=box, quality=np.int16(quality), **(extra or {}))
     os.chmod(path, 0o600)
     return path
 

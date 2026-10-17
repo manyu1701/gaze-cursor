@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -18,6 +19,7 @@ import numpy as np
 
 from gaze_cursor.conditions import model_version
 from gaze_cursor.config import ScreenConfig
+from gaze_cursor.eval.faces import QUALITY, encode_crop, faces_path_for, save_faces
 from gaze_cursor.filters import RUN_FILTER, make_filter
 from gaze_cursor.livetest import head_moved, px_per_deg, to_deg
 from gaze_cursor.online import GATE_DEG, OnlineRidge, click_label
@@ -27,6 +29,8 @@ OOD_Z = 4.0                 # same input-range rule as Run
 STALE_MS = 250.0            # no warp if the last good gaze sample is older than this
 LABEL_WINDOW_MS = (-400.0, -100.0)   # the fixation that guided a click, before the hand moved
 EVENT_CODES = {"warp": 0, "toggle": 1, "quit": 2, "click": 3, "recalibrate": 4}
+FACE_PER_CLICK = 3          # face crops kept per click, evenly spread over LABEL_WINDOW_MS
+FACE_MAX_BYTES = 150_000_000   # stop keeping crops beyond this (a long session); the click log is unaffected
 
 
 def window_median(t: np.ndarray, values: np.ndarray, t_event: float,
@@ -67,8 +71,14 @@ class CursorSession:
     calibrated_at: float = field(default_factory=time.time)   # epoch s of the 9 dots (carried over on resume)
     conditions: dict | None = None      # the meta["conditions"] block of the recording (None: demo / tests)
     model_versions: list[str | None] = field(default_factory=list)   # starting-state hash per calibration
+    keep_faces: bool = False            # keep face crops from the label window before each click (local only)
+    face_jpegs: list[bytes] = field(default_factory=list)
+    face_rows: list[list[float]] = field(default_factory=list)   # [event row, frame time, ms before the click]
+    face_boxes: list[tuple[int, int, int, int]] = field(default_factory=list)
+    face_bytes: int = 0
 
     def __post_init__(self) -> None:
+        self._recent: deque = deque()   # (t_ms, crop, box) of the last frames, just enough for the window
         self.smooth = make_filter(RUN_FILTER)
         self._set_range(self.x_train)
         self.calibrations.append([None, self.calib])
@@ -116,6 +126,35 @@ class CursorSession:
         sh = shift if shift is not None else (np.nan, np.nan, np.nan)
         self.frames.append([t_ms, *raw, *dot, *xr, float(x is not None), *sh, float(self.enabled), self.worst_z])
 
+    def offer_crop(self, t_ms: float, image: np.ndarray, box: tuple[int, int, int, int],
+                   valid: bool = True) -> None:
+        """Remember this frame's face crop (BGR ``image`` cut at ``box``) for a click that may follow;
+        ``valid`` = gaze features were extracted from this frame (not a blink / bad frame).
+        Only the last ``-LABEL_WINDOW_MS[0]`` ms are held; nothing is encoded until a click needs it."""
+        if not self.keep_faces:
+            return
+        x0, y0, x1, y1 = box
+        self._recent.append((float(t_ms), image[y0:y1, x0:x1].copy(), box, bool(valid)))
+        while self._recent and self._recent[0][0] < t_ms + LABEL_WINDOW_MS[0] - 100.0:
+            self._recent.popleft()
+
+    def _keep_crops(self, t_click: float, event_row: int) -> None:
+        """Encode up to FACE_PER_CLICK crops from the label window before this click."""
+        if self.face_bytes >= FACE_MAX_BYTES:
+            return
+        inside = [c for c in self._recent
+                  if t_click + LABEL_WINDOW_MS[0] <= c[0] <= t_click + LABEL_WINDOW_MS[1]]
+        if not inside:
+            return
+        picks = sorted({int(round(i)) for i in np.linspace(0, len(inside) - 1, min(FACE_PER_CLICK, len(inside)))})
+        for i in picks:
+            t, crop, box, valid = inside[i]
+            jpg = encode_crop(crop, (0, 0, crop.shape[1], crop.shape[0]), QUALITY)
+            self.face_jpegs.append(jpg)
+            self.face_boxes.append(box)
+            self.face_rows.append([float(event_row), t, t - t_click, float(valid)])
+            self.face_bytes += len(jpg)
+
     # --- input ---------------------------------------------------------------------------------
     def warp_target(self, now_ms: float) -> tuple[tuple[float, float] | None, str]:
         """Where to warp now, or None with the reason it would not be trustworthy."""
@@ -149,6 +188,8 @@ class CursorSession:
         n_updates = float(getattr(self.model, "n_updates", np.nan))   # model state at this event, for replay
         self.events.append([event.t_ms, float(EVENT_CODES[event.kind]), *exy, button, ok, float(self.enabled),
                             n_updates])
+        if event.kind == "click" and event.xy is not None and self.keep_faces:
+            self._keep_crops(event.t_ms, len(self.events) - 1)
         return action, xy
 
     def _learn_from_click(self, event: InputEvent) -> bool:
@@ -259,9 +300,32 @@ class CursorSession:
                                 "click.warped": "1 = the model learned from this click (learning on); warp rows: 1 = jumped"},
                 "conditions": self._conditions(), "model_versions": self.model_versions,
                 "learning": {"on": self.learn, "resumed": self.resumed, "gate_deg": GATE_DEG,
-                             "forget": getattr(self.model, "forget", None)}}
+                             "forget": getattr(self.model, "forget", None)},
+                "face_crops": self._face_meta(path)}
         np.savez_compressed(tmp, frames=np.array(self.frames, float).reshape(-1, len(self.FRAME_COLUMNS)),
                             events=np.array(self.events, float).reshape(-1, len(self.EVENT_COLUMNS)),
                             meta=json.dumps(meta))
         tmp.replace(path)
+        if self.face_jpegs:
+            ftmp = directory / f".cursor_{self.started}.faces.tmp.npz"
+            save_faces(ftmp, self.face_jpegs, self.face_boxes, extra={
+                "event_row": np.array([r[0] for r in self.face_rows], np.int32),
+                "t_ms": np.array([r[1] for r in self.face_rows], float),
+                "ms_before_click": np.array([r[2] for r in self.face_rows], float),
+                "features_valid": np.array([r[3] for r in self.face_rows], bool)})
+            ftmp.replace(faces_path_for(path))
         return path
+
+    def _face_meta(self, path: Path) -> dict | None:
+        """Describes the face-crop file saved next to the log (None: crops were not kept)."""
+        if not self.keep_faces:
+            return None
+        return {"file": faces_path_for(path).name if self.face_jpegs else None, "rows": len(self.face_jpegs),
+                "per_click_max": FACE_PER_CLICK, "window_ms": LABEL_WINDOW_MS, "bytes": self.face_bytes,
+                "capped": self.face_bytes >= FACE_MAX_BYTES,
+                "arrays": {"event_row": "row of the click in this log's events",
+                           "ms_before_click": "frame time minus click time (inside window_ms)",
+                           "features_valid": "gaze features were extracted from this frame (filter blinks with it)"},
+                "notes": "Close clicks (double-click) can share a frame: group by event_row and drop repeated t_ms. "
+                         "Whether the live model learned from a click is its events row (click.warped); a model that "
+                         "learned from a click must not be scored on it."}

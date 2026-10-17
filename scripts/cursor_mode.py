@@ -42,6 +42,7 @@ from gaze_cursor.capture import Camera
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.cursor_session import CursorSession
 from gaze_cursor.eval.configs import REGISTRY
+from gaze_cursor.eval.faces import crop_box, faces_path_for
 from gaze_cursor.eval.results_log import append_rows, now
 from gaze_cursor.features import assemble, extract_features
 from gaze_cursor.idle import IdleTimer
@@ -152,6 +153,9 @@ def process_frame(session: CursorSession, frame, result, names: tuple[str, ...],
             x = assemble(feats, result.blendshapes, names, "gaze")
     t = frame.timestamp_ms if frame is not None else time.monotonic_ns() / 1e6
     session.frame(t, x, shift)
+    if session.keep_faces and frame is not None and result is not None:
+        session.offer_crop(t, frame.image, crop_box(result.points, (frame.image.shape[1], frame.image.shape[0])),
+                           valid=x is not None)
 
 
 def draw(overlay: ClickThroughOverlay, lines: list[tuple[str, str]], session: CursorSession,
@@ -174,6 +178,9 @@ def finish(session: CursorSession) -> None:
     append_rows([{"time": now(), "mode": "cursor_session", "confirmatory": 0, "session": session.calib,
                   "config": f"{QUICK_CONFIG} + One-Euro", "n_frames": s["frames"], "n_targets": s["clicks"],
                   "err_deg_mean": s["click_gaze_deg_mean"], "err_deg_median": med, "note": note}])
+    faces = faces_path_for(path)
+    if session.face_jpegs and faces.exists():
+        note += f"; {len(session.face_jpegs)} face crops, {faces.stat().st_size / 1e6:.1f} MB (local only)"
     try:
         print(f"saved {path.name}: {note}")
     except OSError:         # the Terminal window was closed (SIGHUP): the data is already on disk
@@ -186,6 +193,9 @@ def main() -> int:
     ap.add_argument("--show-dot", action="store_true", help="draw a faint ring where the tracker thinks you look")
     ap.add_argument("--fresh", action="store_true", help="always run the 9-dot calibration (do not reuse the last)")
     ap.add_argument("--no-learn", action="store_true", help="keep the model frozen (do not learn from clicks)")
+    ap.add_argument("--no-images", action="store_true",
+                    help="do not keep the face crops from just before each click (default: saved next to the "
+                         "log, local only, at most ~150 MB)")
     ap.add_argument("--demo", action="store_true",
                     help="show a friend: fresh calibration, gaze ring on, nothing is saved to disk")
     ap.add_argument("--chip", choices=("auto", "always", "never"), default=None,
@@ -234,6 +244,7 @@ def main() -> int:
         else:
             session.conditions = session_conditions(tags, cfg, session.calib)
             condition_tags.print_tag_verdict(session.conditions)
+            session.keep_faces = not args.no_images
         ref = SimpleNamespace(center=ref_center)
         print("Cursor mode on: tap Right Command to jump to your gaze; Cmd+Option+G on/off, "
               "Cmd+Option+R recalibrate, Cmd+Option+X quit.")

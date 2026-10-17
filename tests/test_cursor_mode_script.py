@@ -100,7 +100,9 @@ def test_cursor_mode_warps_on_the_hotkey_logs_clicks_and_quits(tmp_path, monkeyp
 
     assert gc.main() == 0
     assert len(warps) == 1 and np.allclose(warps[0], (700, 450), atol=1)   # second warp: toggled off
-    (saved,) = tmp_path.glob("cursor_*.npz")
+    (saved,) = [p for p in tmp_path.glob("cursor_*.npz") if not p.name.endswith(".faces.npz")]
+    faces = tmp_path / (saved.stem + ".faces.npz")                          # crops from before the click, local
+    assert faces.exists() and (faces.stat().st_mode & 0o777) == 0o600
     d = np.load(saved)
     meta = json.loads(str(d["meta"]))
     assert len(d["frames"]) == 60 and meta["summary"]["clicks"] == 1 and meta["summary"]["warps"] == 1

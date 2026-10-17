@@ -82,7 +82,8 @@ def summary_row(s: Session, m: dict, results: list[CheckResult]) -> dict:
     bad = [f"{r.check}:{r.level}" for r in results if r.level in (WARN, FAIL)]
     return {
         "time": now(), "mode": "session_report", "confirmatory": 0, "config": FIT_CONFIG,
-        "session": s.path.name, "n_targets": int(m["n_calib"] + m["n_test"]),
+        "session": s.path.name, "n_targets": int(m["n_test"] if held else m["n_calib"] + m["n_test"]),
+        "n_test": int(m["n_test"]) if held else None,
         "n_frames": int(s.valid.sum()),
         "err_deg_mean": m[f"{pre}_mean"], "err_deg_median": m[f"{pre}_median"], "err_deg_p90": m[f"{pre}_p90"],
         "jitter_deg": m["spread_deg"],

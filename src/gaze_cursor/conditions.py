@@ -181,7 +181,9 @@ def validate(block: Mapping[str, object] | None) -> list[Issue]:
     need("screen_layout", isinstance(displays, list) and len(displays) > 0, "screen layout (displays) missing")
     dist = block.get("distance")
     d = dist if isinstance(dist, Mapping) else {}
-    need("distance", d.get("est_cm") is not None, "distance estimate (iris size) missing")
+    # a backfilled block's estimate rests on an assumed field of view and image size: not a measured tag
+    need("distance", d.get("est_cm") is not None and not block.get("backfilled"),
+         "distance not measured (backfilled)" if block.get("backfilled") else "distance estimate (iris size) missing")
     need("lighting_tag", block.get("lighting_tag") in LIGHTING_TAGS[:-1],
          f"lighting tag missing or unknown (one of {', '.join(LIGHTING_TAGS[:-1])})")
     need("glasses", block.get("glasses") in GLASSES_TAGS[:-1], "glasses missing or unknown (yes or no)")

@@ -82,6 +82,7 @@ def git_hash(repo: Path | None = None) -> str:
                               check=True).stdout.strip()
     try:
         h = run("rev-parse", "--short", "HEAD")
-        return h + ("+dirty" if run("status", "--porcelain") else "")
+        # data/ is ignored: a results row is not a code change
+        return h + ("+dirty" if run("status", "--porcelain", "--", ":(top)", ":(top,exclude)data") else "")
     except (OSError, subprocess.SubprocessError):
         return "unknown"

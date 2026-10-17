@@ -151,7 +151,7 @@ def test_png_is_written_and_summary_row_fields(tmp_path):
     assert img is not None and img.shape[1] == int(1470 * sr.SCALE)
     row = sr.summary_row(s, m, r)
     assert row["mode"] == "session_report" and row["confirmatory"] == 0 and row["session"] == s.path.name
-    assert row["n_targets"] == 15 and "calibration->test" in row["note"]
+    assert row["n_targets"] == 5 and row["n_test"] == 5 and "calibration->test" in row["note"]   # test targets only
     quick = fake_session(0, n_calib=9, n_test=0, frames=8)
     qrow = sr.summary_row(quick, all_metrics(quick), grade(all_metrics(quick)))
     assert "leave-one-target-out" in qrow["note"] and np.isfinite(qrow["err_deg_mean"])
