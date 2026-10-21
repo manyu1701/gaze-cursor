@@ -89,6 +89,19 @@ def test_clicks_are_scored_against_the_gaze_just_before_and_everything_is_saved(
     assert meta["summary"]["clicks"] == 1
 
 
+def test_a_task_can_save_the_same_log_under_its_own_prefix_with_extras_and_landings_are_logged(tmp_path) -> None:
+    s = make()
+    t = feed(s, 0, 10)
+    s.handle(InputEvent("landing", t + 5, (500.0, 400.0)), t + 5)
+    path = s.save(tmp_path, prefix="fitts", kind="fitts_task", extra_meta={"trials": [{"index": 0}]},
+                  extra_arrays={"moves": np.zeros((3, 4))})
+    d = np.load(path)
+    meta = json.loads(str(d["meta"]))
+    assert path.name.startswith("fitts_") and meta["kind"] == "fitts_task" and meta["trials"] == [{"index": 0}]
+    assert d["moves"].shape == (3, 4) and d["events"][0, 1] == EVENT_CODES["landing"]
+    assert s.summary()["warps"] == 0                                    # a landing is not a warp
+
+
 def test_status_key_ignores_the_running_time_but_changes_with_what_matters() -> None:
     s = make()
     t = feed(s, 0, 5)
