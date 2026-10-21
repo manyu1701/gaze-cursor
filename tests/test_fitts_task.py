@@ -164,3 +164,31 @@ def test_practice_blocks_come_first_one_per_method_and_are_left_out_of_the_summa
     tr = task.next_target(0.0, None)
     task.on_event(ev("click", 10.0, tr.center, "left"))
     assert task.summary() == {}
+
+
+def test_explicit_schedule_balances_method_and_seat_order_across_the_five_sessions() -> None:
+    args = (CFG, ("trackpad", "gaze_jump"), ("centre", "moved"), (600,), (70, 140))
+    schedule = [("centre", "trackpad"), ("moved", "gaze_jump"), ("centre", "gaze_jump"), ("moved", "trackpad"),
+                ("centre", "trackpad")]
+    first_in_centre = []
+    for n, (seat, method) in enumerate(schedule, 1):
+        blocks = make_blocks(*args, line_amplitudes=(1100,), practice=True, seed=n, seat_first=seat,
+                             method_first=method)
+        scored = [b for b in blocks if not b.practice]
+        assert scored[0].seat == seat and scored[0].method == method and len(scored) == 16
+        second = [b for b in scored if b.seat != seat]
+        assert second[0].method != method                             # flipped in the second seat
+        first_in_centre.append(next(b.method for b in scored if b.seat == "centre"))
+    assert first_in_centre.count("trackpad") == 3 and first_in_centre.count("gaze_jump") == 2
+
+
+def test_refused_taps_and_the_jump_target_are_kept_per_trial() -> None:
+    task = FittsTask(CFG, [Block("gaze_jump", "centre", 600, 70, 1)])
+    task.start_block()
+    task.note_refused(5.0, "ignored: no target yet")                    # nothing to attach to: dropped silently
+    tr = task.next_target(10.0, None)
+    task.note_refused(20.0, "eyes outside the calibrated range")
+    task.note_jump((-5.0, 300.0))
+    task.note_jump((1.0, 1.0))                                          # only the first jump counts
+    assert tr.refused_taps == [(20.0, "eyes outside the calibrated range")] and tr.warp_target == (-5.0, 300.0)
+    assert tr.to_dict()["warp_target"] == (-5.0, 300.0)

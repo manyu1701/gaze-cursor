@@ -102,7 +102,7 @@ def test_the_task_runs_both_methods_logs_trials_moves_and_landings_and_saves_one
                            Tracker.blendshape_names, "gaze")
     xs = np.vstack([x + feats, feats])
     fit = SimpleNamespace(model=Model(), x=xs, y=np.tile([700.0, 450.0], (len(xs), 1)),
-                          posture=[{"dummy": 0.0}], path=Path("session_quick.npz"))
+                          posture=[{"dummy": 0.0}], path=Path("session_quick.npz"), report={"mean_deg": 2.3})
     rows = []                                           # nothing may be logged to results.csv
     monkeypatch.setattr(gc, "Camera", Cam)
     monkeypatch.setattr(gc, "FaceTracker", Tracker)
@@ -133,6 +133,10 @@ def test_the_task_runs_both_methods_logs_trials_moves_and_landings_and_saves_one
     assert d["moves"].shape[1] == 4 and len(d["moves"]) > 18
     assert meta["conditions"]["person_id"] == "p01" and task["model_state_id"]
     assert len(warps) == 9 and np.allclose(warps[0], (700, 450), atol=1)
+    assert task["calibration_fit_deg"] == 2.3 and task["jump_refusal_rules"]["ood_z"] > 0
+    assert all(tr["warp_target"] is not None and tr["refused_taps"] == [] for tr in jump)       # accepted jumps
+    tp = [tr for tr in task["trials"] if tr not in jump]
+    assert all(tr["warp_target"] is None and tr["refused_taps"][0][1] == "jump off in this block" for tr in tp)
     assert not rows and task["model_state_archived"] is True
     assert all(tr["t_requested_ms"] is not None and tr["t_onset_ms"] > tr["t_requested_ms"] for tr in task["trials"])
     assert all(tr["t_landing_ms"] is not None for tr in jump)

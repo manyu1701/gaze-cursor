@@ -31,7 +31,7 @@ import cursor_mode as cm  # noqa: E402
 from gaze_cursor import model_history  # noqa: E402
 from gaze_cursor.capture import Camera  # noqa: E402
 from gaze_cursor.config import ScreenConfig  # noqa: E402
-from gaze_cursor.cursor_session import CursorSession  # noqa: E402
+from gaze_cursor.cursor_session import OOD_Z, STALE_MS, CursorSession  # noqa: E402
 from gaze_cursor.eval.configs import REGISTRY  # noqa: E402
 from gaze_cursor.fitts_task import (  # noqa: E402
     DOT_MODES, METHODS, SEATS, FittsTask, dot_schedule, make_blocks, seat_ok)
@@ -65,6 +65,7 @@ class Runner:
         self.cam, self.tracker, self.canvas, self.cursor = cam, tracker, canvas, cursor
         self.session, self.task, self.names, self.ref = session, task, names, ref
         self.shifts: list[tuple[float, float, float] | None] = []
+        self.moved_side: str | None = None
 
     def step(self, img: np.ndarray | None = None) -> tuple[int, list[str]]:
         """One camera frame + one canvas redraw. Returns (key, outcomes of the task's clicks this frame)."""
@@ -78,7 +79,15 @@ class Runner:
             t = time.monotonic_ns() / 1e6
             if event.kind in ("toggle", "recalibrate"):            # these hotkeys do nothing here
                 continue
+            was_on = self.session.enabled
             action, xy = ("none", None) if event.kind == "move" else self.session.handle(event, t)
+            if event.kind == "warp":                          # log every tap: the jump, or why there was none
+                if action == "warp" and xy is not None:
+                    self.task.note_jump(xy)
+                else:
+                    msg = self.session.message
+                    self.task.note_refused(t, "jump off in this block" if not was_on
+                                           else msg.removeprefix("no jump: ") if msg.startswith("no jump") else "refused")
             if event.kind != "warp" or action == "warp":          # a refused or disabled jump is not a trial's warp
                 outcome = self.task.on_event(event)
                 if outcome:
@@ -140,10 +149,13 @@ def run_dots(run: Runner, schedule: list[dict], dots_log: list[dict]) -> None:
 def run_block(run: Runner, number: int, total: int, gate: bool) -> dict:
     """One block of the task: seat check, then targets until the block's trials are done."""
     task, cfg, canvas = run.task, run.session.cfg, run.canvas
+    side = run.moved_side
     b = task.start_block()
     run.session.enabled = b.method == "gaze_jump"
     seat_text = {"centre": "Sit as you did when you calibrated.",
-                 "moved": "Move your head / chair sideways or closer to or away from the screen until the check says OK."}[b.seat]
+                 "moved": (f"Move your head / chair about 10 cm to your {side}" if side else
+                       "Move your head / chair sideways or closer to or away from the screen")
+              + " until the check says OK."}[b.seat]
     how = ("Tap Right Command to jump the cursor to your gaze, then finish with the trackpad."
            if b.method == "gaze_jump" else "Use the trackpad only (the gaze jump is off).")
     wait_for_space(run, [f"Block {number}/{total}{' (practice, not scored)' if b.practice else ''}: {b.method.replace('_', '-')}, {b.seat} seat", how, seat_text,
@@ -183,7 +195,7 @@ def summary_lines(task: FittsTask) -> list[str]:
 
 
 def save(run: Runner, args, blocks_log: list[dict], dots_log: list[dict], state_id: str | None,
-         aborted: bool, archived: bool = True) -> Path:
+         aborted: bool, archived: bool = True, fit_deg: float | None = None) -> Path:
     task, session = run.task, run.session
     extra = {"task": {
         "name": "step7_jump_and_click", "seed": args.seed, "aborted": aborted, "model_state_id": state_id, "model_state_archived": archived,
@@ -191,7 +203,9 @@ def save(run: Runner, args, blocks_log: list[dict], dots_log: list[dict], state_
         "trials": [t.to_dict() for t in task.trials if t.hit is not None], "summary": task.summary(),
         "ring_points": task.n_ring, "timeout_ms": task.timeout_ms, "feedback_ms": FEEDBACK_MS,
         "dot": {"settle_ms": DOT_SETTLE_MS, "hold_ms": DOT_HOLD_MS, "modes": list(DOT_MODES)},
-        "seat_gate": not args.no_seat_gate, "method_notes": {
+        "seat_gate": not args.no_seat_gate, "moved_side": args.moved_side,
+        "seat_first": args.seat_first, "method_first": args.method_first,
+        "calibration_fit_deg": fit_deg, "jump_refusal_rules": {"ood_z": OOD_Z, "stale_ms": STALE_MS}, "method_notes": {
             "trackpad": "gaze jump off (warp rows log enabled = 0)", "gaze_jump": "tap Right Command, then trackpad"},
         "notes": "Times are camera-clock ms. move rows of 'moves' = [t_ms, x, y, trial index (-1 = no target)]; "
                  "a warp's landing is also a move row. Pointer positions are main-display points, top-left origin.",
@@ -206,6 +220,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--amplitudes", type=float, nargs="*", default=[600.0], help="ring diameters, screen points")
     ap.add_argument("--line-amplitudes", type=float, nargs="*", default=[],
                     help="distances of the two-target left-right line (long distances), screen points")
+    ap.add_argument("--seat-first", choices=SEATS, default=None, help="seat of the first scored blocks")
+    ap.add_argument("--method-first", choices=METHODS, default=None,
+                    help="method first in the first seat (flipped in the second seat)")
+    ap.add_argument("--moved-side", choices=("left", "right"), default=None,
+                    help="which way to move in the moved seat (told on the block screen, stored in the file)")
     ap.add_argument("--practice", action="store_true", help="one short unscored warm-up block per method first")
     ap.add_argument("--widths", type=float, nargs="+", default=[70.0, 140.0], help="target diameters, screen points")
     ap.add_argument("--methods", nargs="+", choices=METHODS, default=list(METHODS))
@@ -225,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     set_tags(tags)
     blocks = make_blocks(cfg, tuple(args.methods), tuple(args.seats), tuple(args.amplitudes), tuple(args.widths),
                          laps=args.laps, seed=args.seed, line_amplitudes=tuple(args.line_amplitudes),
-                         practice=args.practice)
+                         practice=args.practice, seat_first=args.seat_first, method_first=args.method_first)
     for sig in (signal.SIGHUP, signal.SIGTERM):
         signal.signal(sig, cm.stop_on_signal)
     with Camera() as cam, FaceTracker() as tracker:
@@ -261,6 +280,7 @@ def main(argv: list[str] | None = None) -> int:
                 canvas.keep_pointer = True
                 run = Runner(cam, tracker, canvas, cursor, session, task, tuple(tracker.blendshape_names),
                              SimpleRef(ref_center))
+                run.moved_side = args.moved_side
                 try:
                     if not args.no_dots:
                         run_dots(run, dot_schedule(cfg, seed=args.seed), dots_log)
@@ -281,7 +301,8 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             cursor.close()
             if run is not None:
-                path = save(run, args, blocks_log, dots_log, state_id, aborted, archived)
+                path = save(run, args, blocks_log, dots_log, state_id, aborted, archived,
+                            fit.report.get("mean_deg"))
                 print(f"saved {path.name} to data/tasks/ (local only); no results row: the analysis is pre-registered")
     return 0
 

@@ -95,20 +95,31 @@ class Block:
 def make_blocks(cfg: ScreenConfig, methods: tuple[str, ...], seats: tuple[str, ...],
                 amplitudes: tuple[float, ...], widths: tuple[float, ...], *, laps: int = 1, seed: int = 0,
                 n_ring: int = 9, line_amplitudes: tuple[float, ...] = (), practice: bool = False,
-                practice_trials: int = 4) -> list[Block]:
+                practice_trials: int = 4, seat_first: str | None = None,
+                method_first: str | None = None) -> list[Block]:
     """Every method x seat x amplitude x width, one block each; seat blocks are kept together (the chair is
     moved once per seat; the seat order is shuffled too), and the order of methods and of the (amplitude, width) pairs inside a seat is
     shuffled with ``seed`` so a fixed order cannot masquerade as an effect."""
     rng = np.random.default_rng(seed)
     pairs = [("ring", a, w) for a in amplitudes for w in widths] + [("line", a, w) for a in line_amplitudes for w in widths]
     blocks: list[Block] = []
-    for seat in rng.permutation(list(seats)):
+    seat_order = [str(s) for s in rng.permutation(list(seats))]
+    if seat_first is not None:                          # an explicit schedule overrides the seeded order
+        seat_order = [seat_first] + [s for s in seat_order if s != seat_first]
+    method_order = [str(m) for m in rng.permutation(list(methods))]
+    if method_first is not None:
+        method_order = [method_first] + [m for m in method_order if m != method_first]
+    for k, seat in enumerate(seat_order):
+        # With an explicit method_first the method order flips in each following seat, so each method is first
+        # in one seat; otherwise it is shuffled per seat.
+        order_m = (method_order if k % 2 == 0 else method_order[::-1]) if method_first is not None \
+            else [str(m) for m in rng.permutation(list(methods))]
         if practice and not blocks:       # one warm-up block per method, in the first seat, easy and short
             lay, a, _ = pairs[0]
             w = max(widths)
             layout_points(cfg, lay, a, w, n_ring)
-            blocks += [Block(str(m), str(seat), a, w, practice_trials, lay, True) for m in rng.permutation(list(methods))]
-        for method in rng.permutation(list(methods)):
+            blocks += [Block(m, str(seat), a, w, practice_trials, lay, True) for m in order_m]
+        for method in order_m:
             order = rng.permutation(len(pairs))
             for i in order:
                 lay, a, w = pairs[i]
@@ -131,6 +142,8 @@ class FittsTrial:
     t_requested: float | None = None  # when the target was asked for (before it was drawn)
     t_warp: float | None = None
     t_landing: float | None = None
+    warp_target: tuple[float, float] | None = None   # the point the accepted jump aimed at (unclamped smoothed gaze)
+    refused_taps: list[tuple[float, str]] = field(default_factory=list)   # (t_ms, why) taps that did not jump
     warp_landing: tuple[float, float] | None = None
     t_click: float | None = None
     click_xy: tuple[float, float] | None = None
@@ -152,7 +165,8 @@ class FittsTrial:
                 "amplitude_px": self.amplitude, "id_bits": index_of_difficulty(self.amplitude, self.width),
                 "t_onset_ms": self.t_onset, "pointer_at_onset": self.pointer_at_onset,
                 "shift_at_onset": self.shift_at_onset, "t_first_move_ms": self.t_first_move,
-                "t_requested_ms": self.t_requested, "t_warp_ms": self.t_warp, "t_landing_ms": self.t_landing, "warp_landing": self.warp_landing, "t_click_ms": self.t_click,
+                "t_requested_ms": self.t_requested, "t_warp_ms": self.t_warp, "t_landing_ms": self.t_landing, "warp_target": self.warp_target,
+                "refused_taps": self.refused_taps, "warp_landing": self.warp_landing, "t_click_ms": self.t_click,
                 "click_xy": self.click_xy, "hit": self.hit, "timed_out": self.timed_out,
                 "movement_time_ms": self.movement_time_ms, "endpoint_error_px": self.endpoint_error_px}
 
@@ -214,6 +228,18 @@ class FittsTask:
         when the person could first see it, so it becomes the onset all times are measured from."""
         if trial.t_requested is None:
             trial.t_requested, trial.t_onset = trial.t_onset, t_ms
+
+    def note_jump(self, xy: tuple[float, float]) -> None:
+        """The session accepted a jump aimed at ``xy`` (before the display clamp); only the first counts."""
+        trial = self.current
+        if trial is not None and trial.warp_target is None:
+            trial.warp_target = (float(xy[0]), float(xy[1]))
+
+    def note_refused(self, t_ms: float, why: str) -> None:
+        """A Right Command tap that did not jump (jump off in this block, face not tracked, eyes out of range)."""
+        trial = self.current
+        if trial is not None:
+            trial.refused_taps.append((float(t_ms), why))
 
     def on_event(self, event: InputEvent) -> str | None:
         """Feed an input event. Returns 'hit' / 'miss' when a click ends the trial, else None."""
