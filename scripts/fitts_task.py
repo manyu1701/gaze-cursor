@@ -159,6 +159,8 @@ def run_block(run: Runner, number: int, total: int, gate: bool) -> dict:
             canvas.circle(img, trial.center, trial.width / 2, WHITE, 3)
             canvas.text(img, f"block {number}/{total}   target {len(task.trials) - block_start}/{b.n_trials}   q quits",
                         y=canvas.size[1] - 30)
+            if run.session.message.startswith("no jump"):      # say why a tap did nothing
+                canvas.text(img, run.session.message, y=canvas.size[1] - 80)
             _, outcomes = run.step(img)
             if not shown:                                   # the target is on the screen from this frame on
                 task.mark_shown(trial, time.monotonic_ns() / 1e6)
