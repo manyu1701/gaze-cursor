@@ -33,7 +33,6 @@ from gaze_cursor.capture import Camera  # noqa: E402
 from gaze_cursor.config import ScreenConfig  # noqa: E402
 from gaze_cursor.cursor_session import CursorSession  # noqa: E402
 from gaze_cursor.eval.configs import REGISTRY  # noqa: E402
-from gaze_cursor.eval.results_log import append_rows, now  # noqa: E402
 from gaze_cursor.fitts_task import (  # noqa: E402
     DOT_MODES, METHODS, SEATS, FittsTask, dot_schedule, make_blocks, seat_ok)
 from gaze_cursor.landmarks import FaceTracker  # noqa: E402
@@ -77,12 +76,13 @@ class Runner:
         outcomes: list[str] = []
         for event in self.cursor.poll():
             t = time.monotonic_ns() / 1e6
-            outcome = self.task.on_event(event)
-            if outcome:
-                outcomes.append(outcome)
-            if event.kind in ("move", "toggle", "recalibrate"):   # the path goes to the task's array, not the
-                continue                                          # event log; the other two hotkeys do nothing here
-            action, xy = self.session.handle(event, t)
+            if event.kind in ("toggle", "recalibrate"):            # these hotkeys do nothing here
+                continue
+            action, xy = ("none", None) if event.kind == "move" else self.session.handle(event, t)
+            if event.kind != "warp" or action == "warp":          # a refused or disabled jump is not a trial's warp
+                outcome = self.task.on_event(event)
+                if outcome:
+                    outcomes.append(outcome)
             if action == "warp" and xy is not None:
                 self.cursor.warp(xy)
             elif action == "quit":
@@ -143,7 +143,7 @@ def run_block(run: Runner, number: int, total: int, gate: bool) -> dict:
     b = task.start_block()
     run.session.enabled = b.method == "gaze_jump"
     seat_text = {"centre": "Sit as you did when you calibrated.",
-                 "moved": "Move your head / chair about 10 cm sideways or closer to or away from the screen."}[b.seat]
+                 "moved": "Move your head / chair sideways or closer to or away from the screen until the check says OK."}[b.seat]
     how = ("Tap Right Command to jump the cursor to your gaze, then finish with the trackpad."
            if b.method == "gaze_jump" else "Use the trackpad only (the gaze jump is off).")
     wait_for_space(run, [f"Block {number}/{total}: {b.method.replace('_', '-')}, {b.seat} seat", how, seat_text,
@@ -153,13 +153,16 @@ def run_block(run: Runner, number: int, total: int, gate: bool) -> dict:
     block_start = len(task.trials)
     while not task.block_done:
         trial = task.next_target(time.monotonic_ns() / 1e6, run.pointer(), run.session.shift)
-        outcome, flash_until = None, 0.0
+        outcome, shown = None, False
         while outcome is None:
             img = canvas.blank()
             canvas.circle(img, trial.center, trial.width / 2, WHITE, 3)
             canvas.text(img, f"block {number}/{total}   target {len(task.trials) - block_start}/{b.n_trials}   q quits",
                         y=canvas.size[1] - 30)
             _, outcomes = run.step(img)
+            if not shown:                                   # the target is on the screen from this frame on
+                task.mark_shown(trial, time.monotonic_ns() / 1e6)
+                shown = True
             outcome = outcomes[0] if outcomes else task.update(time.monotonic_ns() / 1e6)
         flash_until = time.monotonic_ns() / 1e6 + FEEDBACK_MS
         while time.monotonic_ns() / 1e6 < flash_until:
@@ -178,10 +181,10 @@ def summary_lines(task: FittsTask) -> list[str]:
 
 
 def save(run: Runner, args, blocks_log: list[dict], dots_log: list[dict], state_id: str | None,
-         aborted: bool) -> Path:
+         aborted: bool, archived: bool = True) -> Path:
     task, session = run.task, run.session
     extra = {"task": {
-        "name": "step7_jump_and_click", "seed": args.seed, "aborted": aborted, "model_state_id": state_id,
+        "name": "step7_jump_and_click", "seed": args.seed, "aborted": aborted, "model_state_id": state_id, "model_state_archived": archived,
         "learning": False, "blocks": blocks_log, "dots": dots_log,
         "trials": [t.to_dict() for t in task.trials if t.hit is not None], "summary": task.summary(),
         "ring_points": task.n_ring, "timeout_ms": task.timeout_ms, "feedback_ms": FEEDBACK_MS,
@@ -237,8 +240,9 @@ def main(argv: list[str] | None = None) -> int:
             state_id = model_history.archive(QUICK_DIR, model, session.x_train, ref_center, session.calib, cfg,
                                              session.calibrated_at, "calibration", person_id=c.get("person_id"),
                                              code=c.get("git_hash"))
+            archived = True
         except Exception as e:                        # a full disk must not stop the task
-            state_id = model_history.state_id(model)
+            state_id, archived = model_history.state_id(model), False
             print(f"Model history not written: {e}")
         task = FittsTask(cfg, blocks)
         cursor = MacCursor((cfg.width_px, cfg.height_px), HotkeyDetector(), track_moves=True)
@@ -271,13 +275,8 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             cursor.close()
             if run is not None:
-                path = save(run, args, blocks_log, dots_log, state_id, aborted)
-                s = session.summary()
-                append_rows([{"time": now(), "mode": "fitts_task", "confirmatory": 0, "session": session.calib,
-                              "config": f"{QUICK_CONFIG} frozen", "n_frames": s["frames"],
-                              "n_targets": len([t for t in task.trials if t.hit is not None]),
-                              "note": f"{path.name}; " + "; ".join(summary_lines(task))}])
-                print(f"saved {path.name} to data/tasks/ (local only) and logged to data/results.csv")
+                path = save(run, args, blocks_log, dots_log, state_id, aborted, archived)
+                print(f"saved {path.name} to data/tasks/ (local only); no results row: the analysis is pre-registered")
     return 0
 
 

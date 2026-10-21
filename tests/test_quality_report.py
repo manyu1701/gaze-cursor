@@ -132,6 +132,18 @@ def test_cursor_log_gets_only_the_tag_check_and_no_row(tmp_path, monkeypatch, ca
     assert not csv_path.exists() and not (tmp_path / "cursor_20261013_234559.report.png").exists()
 
 
+def test_fitts_task_file_gets_only_the_tag_check_and_no_row(tmp_path, monkeypatch, capsys):
+    sr = _load_script()
+    log = tmp_path / "fitts_20261022_120000.npz"
+    np.savez(log, meta=json.dumps({"kind": "fitts_task"}), frames=np.zeros((2, 2)))
+    monkeypatch.setattr(sr, "load_session", lambda p: pytest.fail("a task file was loaded as a session"))
+    monkeypatch.setattr(sr, "all_metrics", lambda s: pytest.fail("calibration metrics computed for a task file"))
+    csv_path = tmp_path / "r.csv"
+    assert sr.run(log, None, csv_path) == 0
+    assert "CONDITION TAGS" in capsys.readouterr().out and not csv_path.exists()
+    assert sr.run(tmp_path / "fitts_20261022_120000.faces.npz", None, csv_path) == 2    # crops are refused
+
+
 def test_script_refuses_cursor_mode_calibration_by_note():
     from gaze_cursor.eval.quality import refusal
     s = fake_session(0)

@@ -60,7 +60,7 @@ def test_the_task_runs_both_methods_logs_trials_moves_and_landings_and_saves_one
             super().__init__(*a, **k)
             made["task"] = self
 
-    warps, polls = [], {"n": 0}
+    warps, polls, pending, age = [], {"n": 0}, [], {}
 
     class Cursor:
         def __init__(self, size, detector=None, track_moves=False):
@@ -69,16 +69,20 @@ def test_the_task_runs_both_methods_logs_trials_moves_and_landings_and_saves_one
         def poll(self):
             polls["n"] += 1
             task, now = made["task"], t["ms"]
-            out = [InputEvent("move", now, (11.0, 21.0))]
+            out = [InputEvent("move", now, (11.0, 21.0)), *pending]
+            pending.clear()
             trial = task.current
-            if trial is not None and polls["n"] % 6 == 0:
-                if task.blocks[trial.block].method == "gaze_jump":
-                    out.append(InputEvent("warp", now))
-                cx, cy = trial.center
-                out.append(InputEvent("click", now + 1, (cx + 5, cy), "left"))
+            if trial is not None:
+                age[trial.index] = age.get(trial.index, 0) + 1       # polls since this target appeared
+                if age[trial.index] == 3:
+                    out.append(InputEvent("warp", now))               # in trackpad blocks the jump is off: no t_warp
+                if age[trial.index] == 6:
+                    cx, cy = trial.center
+                    out.append(InputEvent("click", now + 1, (cx + 5, cy), "left"))
             return out
         def warp(self, xy):
             warps.append(xy)
+            pending.append(InputEvent("landing", t["ms"], xy))    # the real sink queues the measured landing
             return xy
         def close(self): pass
 
@@ -99,7 +103,7 @@ def test_the_task_runs_both_methods_logs_trials_moves_and_landings_and_saves_one
     xs = np.vstack([x + feats, feats])
     fit = SimpleNamespace(model=Model(), x=xs, y=np.tile([700.0, 450.0], (len(xs), 1)),
                           posture=[{"dummy": 0.0}], path=Path("session_quick.npz"))
-    rows = []
+    rows = []                                           # nothing may be logged to results.csv
     monkeypatch.setattr(gc, "Camera", Cam)
     monkeypatch.setattr(gc, "FaceTracker", Tracker)
     monkeypatch.setattr(gc, "MacCursor", Cursor)
@@ -110,7 +114,6 @@ def test_the_task_runs_both_methods_logs_trials_moves_and_landings_and_saves_one
     monkeypatch.setattr(gc, "QUICK_DIR", tmp_path / "quick")
     monkeypatch.setattr(gc.cm, "QUICK_DIR", tmp_path / "quick")
     monkeypatch.setattr(gc, "TASKS_DIR", tmp_path / "tasks")
-    monkeypatch.setattr(gc, "append_rows", rows.extend)
     monkeypatch.setattr(gc.ScreenConfig, "from_system", classmethod(lambda cls: ScreenConfig()))
     center = gc.cm.posture_metrics(result.points, result.transform, (1280, 720))     # head never moves
     monkeypatch.setattr(gc.Reference, "from_current", classmethod(lambda cls, p: SimpleNamespace(center=center)))
@@ -130,6 +133,8 @@ def test_the_task_runs_both_methods_logs_trials_moves_and_landings_and_saves_one
     assert d["moves"].shape[1] == 4 and len(d["moves"]) > 18
     assert meta["conditions"]["person_id"] == "p01" and task["model_state_id"]
     assert len(warps) == 9 and np.allclose(warps[0], (700, 450), atol=1)
-    assert rows[0]["mode"] == "fitts_task" and rows[0]["n_targets"] == 18
+    assert not rows and task["model_state_archived"] is True
+    assert all(tr["t_requested_ms"] is not None and tr["t_onset_ms"] > tr["t_requested_ms"] for tr in task["trials"])
+    assert all(tr["t_landing_ms"] is not None for tr in jump)
     assert (tmp_path / "tasks" / (saved.stem + ".faces.npz")).exists()
     assert not list((tmp_path / "tasks").glob(".*tmp*"))

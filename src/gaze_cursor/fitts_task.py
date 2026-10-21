@@ -73,18 +73,18 @@ def make_blocks(cfg: ScreenConfig, methods: tuple[str, ...], seats: tuple[str, .
                 amplitudes: tuple[float, ...], widths: tuple[float, ...], *, laps: int = 1, seed: int = 0,
                 n_ring: int = 9) -> list[Block]:
     """Every method x seat x amplitude x width, one block each; seat blocks are kept together (the chair is
-    moved once per seat), and the order of methods and of the (amplitude, width) pairs inside a seat is
+    moved once per seat; the seat order is shuffled too), and the order of methods and of the (amplitude, width) pairs inside a seat is
     shuffled with ``seed`` so a fixed order cannot masquerade as an effect."""
     rng = np.random.default_rng(seed)
     pairs = [(a, w) for a in amplitudes for w in widths]
     blocks: list[Block] = []
-    for seat in seats:
+    for seat in rng.permutation(list(seats)):
         for method in rng.permutation(list(methods)):
             order = rng.permutation(len(pairs))
             for i in order:
                 a, w = pairs[i]
                 ring_points(cfg, a, w, n_ring)           # fail early if it does not fit
-                blocks.append(Block(str(method), seat, a, w, n_ring * laps))
+                blocks.append(Block(str(method), str(seat), a, w, n_ring * laps))
     return blocks
 
 
@@ -95,11 +95,13 @@ class FittsTrial:
     center: tuple[float, float]
     width: float
     amplitude: float
-    t_onset: float
+    t_onset: float                    # requested at next_target; ``mark_shown`` moves it to the first drawn frame
     pointer_at_onset: tuple[float, float] | None
     shift_at_onset: tuple[float, float, float] | None = None   # head shift vs calibration (ratio, dx cm, dy cm)
     t_first_move: float | None = None
+    t_requested: float | None = None  # when the target was asked for (before it was drawn)
     t_warp: float | None = None
+    t_landing: float | None = None
     warp_landing: tuple[float, float] | None = None
     t_click: float | None = None
     click_xy: tuple[float, float] | None = None
@@ -121,7 +123,7 @@ class FittsTrial:
                 "amplitude_px": self.amplitude, "id_bits": index_of_difficulty(self.amplitude, self.width),
                 "t_onset_ms": self.t_onset, "pointer_at_onset": self.pointer_at_onset,
                 "shift_at_onset": self.shift_at_onset, "t_first_move_ms": self.t_first_move,
-                "t_warp_ms": self.t_warp, "warp_landing": self.warp_landing, "t_click_ms": self.t_click,
+                "t_requested_ms": self.t_requested, "t_warp_ms": self.t_warp, "t_landing_ms": self.t_landing, "warp_landing": self.warp_landing, "t_click_ms": self.t_click,
                 "click_xy": self.click_xy, "hit": self.hit, "timed_out": self.timed_out,
                 "movement_time_ms": self.movement_time_ms, "endpoint_error_px": self.endpoint_error_px}
 
@@ -178,6 +180,12 @@ class FittsTask:
         self._in_block += 1
         return trial
 
+    def mark_shown(self, trial: FittsTrial, t_ms: float) -> None:
+        """The target has been drawn (the first canvas update after ``next_target``): this, not the request, is
+        when the person could first see it, so it becomes the onset all times are measured from."""
+        if trial.t_requested is None:
+            trial.t_requested, trial.t_onset = trial.t_onset, t_ms
+
     def on_event(self, event: InputEvent) -> str | None:
         """Feed an input event. Returns 'hit' / 'miss' when a click ends the trial, else None."""
         trial = self.current
@@ -190,7 +198,7 @@ class FittsTask:
         elif event.kind == "warp" and trial.t_warp is None:
             trial.t_warp = event.t_ms
         elif event.kind == "landing" and event.xy is not None and trial.t_warp is not None:
-            trial.warp_landing = event.xy
+            trial.warp_landing, trial.t_landing = event.xy, event.t_ms
             self.moves.append((event.t_ms, event.xy[0], event.xy[1], trial.index))
         elif event.kind == "click" and event.button == "left" and event.xy is not None:
             trial.t_click, trial.click_xy = event.t_ms, event.xy
@@ -249,7 +257,7 @@ DOT_MODES = ("eyes", "head")
 
 def dot_schedule(cfg: ScreenConfig, n_dots: int = 9, *, seed: int = 0) -> list[dict]:
     """Fixation dots for the short eyes-only / head-turn block: the same ``n_dots`` positions (a 3 x 3 grid
-    inset from the edges) shown once in each mode, the order shuffled per mode. Each item is
+    inset from the edges) shown once in each mode, the mode order and the dot order shuffled with ``seed``. Each item is
     ``{"mode", "index", "xy"}``; the caller times them and logs the frames."""
     side = int(round(math.sqrt(n_dots)))
     if side * side != n_dots:
@@ -259,7 +267,7 @@ def dot_schedule(cfg: ScreenConfig, n_dots: int = 9, *, seed: int = 0) -> list[d
     pts = [(float(x), float(y)) for y in ys for x in xs]
     rng = np.random.default_rng(seed)
     out = []
-    for mode in DOT_MODES:
+    for mode in rng.permutation(list(DOT_MODES)):
         for i in rng.permutation(n_dots):
-            out.append({"mode": mode, "index": int(i), "xy": pts[i]})
+            out.append({"mode": str(mode), "index": int(i), "xy": pts[i]})
     return out

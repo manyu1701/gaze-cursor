@@ -41,7 +41,9 @@ def test_make_blocks_covers_every_cell_keeps_seats_together_and_is_seeded() -> N
     assert {(b.method, b.seat, b.amplitude, b.width) for b in a} == {
         (m, s, am, w) for m in ("trackpad", "gaze_jump") for s in ("centre", "moved") for am in (500, 700)
         for w in (60, 120)}
-    assert [b.seat for b in a] == ["centre"] * 8 + ["moved"] * 8
+    seats = [b.seat for b in a]
+    assert seats in (["centre"] * 8 + ["moved"] * 8, ["moved"] * 8 + ["centre"] * 8)   # kept together, order shuffled
+    assert any(make_blocks(*args, seed=k)[0].seat == "moved" for k in range(20))
     assert a == make_blocks(*args, seed=3)
     assert a != make_blocks(*args, seed=4)
 
@@ -58,10 +60,12 @@ def test_a_trial_records_phases_and_the_click_decides_hit_or_miss() -> None:
     task.on_event(ev("move", 1120.0, (20, 20)))
     task.on_event(ev("warp", 1300.0))
     task.on_event(ev("landing", 1301.0, (700.0, 400.0)))
+    assert trial.t_landing == 1301.0
     assert task.on_event(ev("click", 1900.0, (0, 0), "left")) == "miss"     # a click far from the target
     assert trial.hit is False and (trial.endpoint_error_px or 0) > 30
+    task.mark_shown(trial, 1016.0)
+    assert (trial.t_requested, trial.t_onset) == (1000.0, 1016.0) and trial.movement_time_ms == 884.0
     assert (trial.t_first_move, trial.t_warp, trial.warp_landing) == (1120.0, 1300.0, (700.0, 400.0))
-    assert trial.movement_time_ms == 900.0
     second = task.next_target(3000.0, (5.0, 5.0))
     out = task.on_event(ev("click", 3500.0, (second.center[0] + 10, second.center[1]), "left"))
     assert out == "hit" and second.hit and task.block_done and task.done
@@ -112,6 +116,7 @@ def test_dot_schedule_shows_every_position_once_per_mode() -> None:
     assert len(sched) == 18
     for mode in ("eyes", "head"):
         assert sorted(d["index"] for d in sched if d["mode"] == mode) == list(range(9))
+    assert any(dot_schedule(CFG, seed=k)[0]["mode"] == "head" for k in range(20))
     assert {d["index"]: d["xy"] for d in sched if d["mode"] == "eyes"} == {
         d["index"]: d["xy"] for d in sched if d["mode"] == "head"}
     assert all(CFG.target_is_safe(d["xy"], 16) for d in sched)
