@@ -2,12 +2,28 @@
 
 Move the macOS cursor with your eyes, using only the built-in webcam.
 
-A learning and portfolio project: build a webcam gaze-estimation engine, then **measure it rigorously**. Accuracy is reported in pixels, centimetres and degrees of visual angle, with jitter, on held-out targets from recorded sessions.
+<!-- Demo GIF goes here: Cursor mode, 10-15 s, cursor jumping to where you look. -->
 
-> **Status:** M0, M1 and M2 are done; **M3 (real cursor control) is in progress and usable**.
-> - **Accuracy:** about 2.7° mean / 2.4° median on held-out targets (roughly 2–3 cm on screen), 30 fps, about 12 ms from camera frame to screen. Full results with confidence intervals, including what did *not* work: [`RESULTS.md`](RESULTS.md).
-> - **Biggest findings (pre-registered tests):** lighting and head position matter far more than the model; a 15-second 9-dot recalibration where you sit recovers most of the cost of moving your head.
-> - **Cursor mode:** tap Right Command and the real cursor jumps to where you look; finish with the trackpad. Learning from your clicks (self-recalibration) is built and being tested. See the [roadmap](#roadmap).
+A webcam gaze-estimation engine, measured the way you would measure a model before shipping it: held-out targets, confidence intervals, and hypotheses committed to git before the data that tests them existed.
+
+| | |
+| --- | --- |
+| **Accuracy** | 2.7° mean / 2.4° median on held-out targets (about 2–3 cm on screen at 60 cm) |
+| **Speed** | 30 fps, about 12 ms from camera frame to screen |
+| **Experiments** | 7 pre-registered tests: 5 supported, 2 not, all reported |
+| **Stack** | Python, MediaPipe, scikit-learn, OpenCV, PyObjC; about 390 tests in CI |
+
+### What the experiments found
+
+1. **Conditions beat models.** Lighting (+2.4 to +4.1° error) and a ~10 cm head move (+1.9°) changed accuracy far more than any model variant tried (≤ 0.25°). Richer eye-shape features looked promising in early sessions and did not replicate.
+2. **Recalibrate where you sit.** A 15-second 9-dot recalibration at the new position beat a model pooled over every other position by 1.29° (95% CI 0.80–1.77), at 5 of 5 positions.
+3. **Learning from your own clicks is promising, not proven.** It passed its pre-registered rule over 332 clicks, but one long session carries most of the gain, so confidence is low until more sessions are in.
+
+Full numbers, including what did not work: [`RESULTS.md`](RESULTS.md). Each hypothesis, frozen before its data, and its result: [`PREREGISTRATIONS.md`](PREREGISTRATIONS.md). Method: [How it works](#how-it-works).
+
+> **Status:** M0–M2 done; **M3 (real cursor control) is usable**. Tap Right Command and the real cursor jumps to where you look; finish with the trackpad. It learns from your clicks by default. See the [roadmap](#roadmap).
+
+Built by [Abhimanyu Sen](https://www.linkedin.com/in/abhimanyu-sen) as a learning and portfolio project. Everything runs locally; no camera images or face data leave your Mac.
 
 ## Try it (about 5 minutes)
 
@@ -146,7 +162,7 @@ capture → landmarks → features → calibration model → smoothing → outpu
 | landmarks | `landmarks.py` | MediaPipe FaceLandmarker (Tasks API): 478 face and iris points, 52 blendshape scores, head pose from the transformation matrix |
 | features | `features.py` | Iris position within each eye, head yaw/pitch/roll, eye openness, head position from the eye spacing, an optional blendshape subset. Pure functions |
 | calibration | `calibration.py` | Ridge or polynomial-ridge regression from features to screen (x, y); an experimental constrained gaze-ray model (`geo`) |
-| smoothing | | One-Euro filter (planned, M2) |
+| smoothing | `filters.py` | One-Euro filter (adopted in M2: less lag and overshoot than the old moving average) |
 | output sinks | `sinks/` | On-screen gaze dot today; real cursor from M3 |
 
 Around the pipeline: `posture.py` (setup checklist, reference posture, lighting), `config.py` (screen geometry from macOS, notch and rounded-corner aware), and `eval/` (sessions, layouts, splits, statistics, the pre-registered analyses). Each stage is swappable, and the core does not depend on any particular sink. Frames are never mirrored for processing or recording; the viewer flips its display only.
@@ -190,7 +206,7 @@ See [`PLAN.md`](PLAN.md) for details and each milestone's "done when" check.
 | M0 | See the face: live landmarks, head pose, FPS | Done |
 | M1 | First gaze estimate and first accuracy number | Done |
 | M2 | Make it good: evaluation harness, calibration redesign, lighting, head position, smoothing | Done ([`RESULTS.md`](RESULTS.md)) |
-| M3 | Control the real cursor: gaze jump + trackpad, self-recalibration from clicks, usability test | In progress: Cursor mode works; click learning built, pre-registered test waiting on recordings |
+| M3 | Control the real cursor: gaze jump + trackpad, self-recalibration from clicks, usability test | In progress: Cursor mode works; click learning on by default after its pre-registered test (supported, low confidence) |
 | M4 | Choose a direction: precision tricks, intent model, productivity vs accessibility | Planned |
 | M5 | Generalise: other webcams, screens, people, lighting | Later |
 
