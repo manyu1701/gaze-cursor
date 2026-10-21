@@ -56,6 +56,25 @@ def ring_points(cfg: ScreenConfig, amplitude: float, width: float, n: int = 9) -
     return pts
 
 
+def line_points(cfg: ScreenConfig, amplitude: float, width: float) -> list[tuple[float, float]]:
+    """Two targets ``amplitude`` apart on a horizontal line through the middle of the usable screen, visited
+    alternately (the long-distance layout: a ring cannot be wider than the screen is high)."""
+    cy = (cfg.top_inset_pt + cfg.height_px) / 2
+    pts = [(cfg.width_px / 2 + s * amplitude / 2, cy) for s in (-1, 1)]
+    if not all(cfg.target_is_safe(p, ring_px=width / 2) for p in pts):
+        raise ValueError(f"line amplitude {amplitude:.0f} px does not fit this screen for width {width:.0f} px")
+    return pts
+
+
+LAYOUTS = ("ring", "line")
+
+
+def layout_points(cfg: ScreenConfig, layout: str, amplitude: float, width: float, n: int = 9) -> list[tuple[float, float]]:
+    if layout not in LAYOUTS:
+        raise ValueError(f"unknown layout {layout!r}")
+    return ring_points(cfg, amplitude, width, n) if layout == "ring" else line_points(cfg, amplitude, width)
+
+
 @dataclass(frozen=True)
 class Block:
     method: str                       # METHODS
@@ -63,28 +82,38 @@ class Block:
     amplitude: float                  # ring diameter, points
     width: float                      # target diameter, points
     n_trials: int = 9                 # one lap of the ring
+    layout: str = "ring"              # LAYOUTS: "ring" (9 points, star order) or "line" (2 points, alternating)
+    practice: bool = False            # unscored warm-up block (analysis leaves it out; it is kept in the file)
 
     def __post_init__(self) -> None:
         if self.method not in METHODS or self.seat not in SEATS:
             raise ValueError(f"unknown method / seat: {self.method!r} / {self.seat!r}")
+        if self.layout not in LAYOUTS:
+            raise ValueError(f"unknown layout: {self.layout!r}")
 
 
 def make_blocks(cfg: ScreenConfig, methods: tuple[str, ...], seats: tuple[str, ...],
                 amplitudes: tuple[float, ...], widths: tuple[float, ...], *, laps: int = 1, seed: int = 0,
-                n_ring: int = 9) -> list[Block]:
+                n_ring: int = 9, line_amplitudes: tuple[float, ...] = (), practice: bool = False,
+                practice_trials: int = 4) -> list[Block]:
     """Every method x seat x amplitude x width, one block each; seat blocks are kept together (the chair is
     moved once per seat; the seat order is shuffled too), and the order of methods and of the (amplitude, width) pairs inside a seat is
     shuffled with ``seed`` so a fixed order cannot masquerade as an effect."""
     rng = np.random.default_rng(seed)
-    pairs = [(a, w) for a in amplitudes for w in widths]
+    pairs = [("ring", a, w) for a in amplitudes for w in widths] + [("line", a, w) for a in line_amplitudes for w in widths]
     blocks: list[Block] = []
     for seat in rng.permutation(list(seats)):
+        if practice and not blocks:       # one warm-up block per method, in the first seat, easy and short
+            lay, a, _ = pairs[0]
+            w = max(widths)
+            layout_points(cfg, lay, a, w, n_ring)
+            blocks += [Block(str(m), str(seat), a, w, practice_trials, lay, True) for m in rng.permutation(list(methods))]
         for method in rng.permutation(list(methods)):
             order = rng.permutation(len(pairs))
             for i in order:
-                a, w = pairs[i]
-                ring_points(cfg, a, w, n_ring)           # fail early if it does not fit
-                blocks.append(Block(str(method), str(seat), a, w, n_ring * laps))
+                lay, a, w = pairs[i]
+                layout_points(cfg, lay, a, w, n_ring)    # fail early if it does not fit
+                blocks.append(Block(str(method), str(seat), a, w, n_ring * laps, lay))
     return blocks
 
 
@@ -164,7 +193,7 @@ class FittsTask:
             raise RuntimeError("no further block, or the current one is not finished")
         self.block_index += 1
         b = self.blocks[self.block_index]
-        self._ring = ring_points(self.cfg, b.amplitude, b.width, self.n_ring)
+        self._ring = layout_points(self.cfg, b.layout, b.amplitude, b.width, self.n_ring)
         self._in_block = 0
         return b
 
@@ -215,13 +244,15 @@ class FittsTask:
         return None
 
     def summary(self) -> dict:
-        """Per (method, seat): trials, hit rate, median movement time of hits. Descriptive only; the
+        """Per (method, seat), practice blocks left out: trials, hit rate, median movement time of hits. Descriptive only; the
         pre-registered analysis is offline."""
         out: dict[str, dict] = {}
         for tr in self.trials:
             if tr.hit is None:
                 continue
             b = self.blocks[tr.block]
+            if b.practice:
+                continue
             row = out.setdefault(f"{b.method}/{b.seat}", {"n": 0, "hits": 0, "times": []})
             row["n"] += 1
             row["hits"] += int(tr.hit)

@@ -7,7 +7,7 @@ import pytest
 
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.fitts_task import (
-    Block, FittsTask, dot_schedule, index_of_difficulty, make_blocks, ring_points, seat_ok, star_order)
+    Block, FittsTask, dot_schedule, line_points, index_of_difficulty, make_blocks, ring_points, seat_ok, star_order)
 from gaze_cursor.sinks.cursor import FLAG_COMMAND, RIGHT_COMMAND_KEYCODE, HotkeyDetector, InputEvent
 
 CFG = ScreenConfig(width_px=1470, height_px=956, width_cm=30.0, height_cm=19.5, distance_cm=60.0)
@@ -130,3 +130,34 @@ def test_moves_are_reported_and_do_not_cancel_a_warp_tap() -> None:
     out = d.mouse_moved((3, 4), 50)
     assert [(e.kind, e.xy) for e in out] == [("move", (3.0, 4.0))]
     assert [e.kind for e in d.flags_changed(RIGHT_COMMAND_KEYCODE, 0, 100)] == ["warp"]
+
+
+def test_line_layout_alternates_two_far_targets_and_must_fit() -> None:
+    a, b = line_points(CFG, 1100, 140)
+    assert math.dist(a, b) == pytest.approx(1100) and a[1] == b[1]
+    with pytest.raises(ValueError):
+        line_points(CFG, 1400, 140)
+    task = FittsTask(CFG, [Block("trackpad", "centre", 1100, 140, n_trials=4, layout="line")])
+    task.start_block()
+    centers = []
+    for k in range(4):
+        tr = task.next_target(100.0 * k, None)
+        centers.append(tr.center)
+        task.on_event(ev("click", 100.0 * k + 50, tr.center, "left"))
+    assert centers == [a, b, a, b]
+    with pytest.raises(ValueError):
+        Block("trackpad", "centre", 500, 60, layout="spiral")
+
+
+def test_practice_blocks_come_first_one_per_method_and_are_left_out_of_the_summary() -> None:
+    blocks = make_blocks(CFG, ("trackpad", "gaze_jump"), ("centre", "moved"), (600,), (70, 140),
+                         line_amplitudes=(1100,), practice=True, seed=2)
+    pr = [b for b in blocks if b.practice]
+    assert blocks[:2] == pr and {b.method for b in pr} == {"trackpad", "gaze_jump"} and all(b.n_trials == 4 for b in pr)
+    assert len(blocks) == 2 + 2 * 2 * 4 and {b.layout for b in blocks} == {"ring", "line"}
+    assert len({b.seat for b in pr}) == 1 and pr[0].seat == blocks[2].seat       # warm up in the first seat
+    task = FittsTask(CFG, blocks[:1])
+    task.start_block()
+    tr = task.next_target(0.0, None)
+    task.on_event(ev("click", 10.0, tr.center, "left"))
+    assert task.summary() == {}

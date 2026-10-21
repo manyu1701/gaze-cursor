@@ -11,7 +11,7 @@ per-trial phase times, the conditions block, the model's state id and face crops
 
 The protocol (counts, sizes, order) is frozen in PREREGISTRATIONS.md; the defaults here are for development.
 
-  uv run scripts/fitts_task.py [--laps 1] [--amplitudes 600 800] [--widths 70 140] [--no-dots] [--no-seat-gate]
+  uv run scripts/fitts_task.py [--laps 1] [--amplitudes 600] [--line-amplitudes 1100] [--widths 70 140] [--practice] [--no-dots] [--no-seat-gate]
 """
 
 from __future__ import annotations
@@ -146,7 +146,7 @@ def run_block(run: Runner, number: int, total: int, gate: bool) -> dict:
                  "moved": "Move your head / chair sideways or closer to or away from the screen until the check says OK."}[b.seat]
     how = ("Tap Right Command to jump the cursor to your gaze, then finish with the trackpad."
            if b.method == "gaze_jump" else "Use the trackpad only (the gaze jump is off).")
-    wait_for_space(run, [f"Block {number}/{total}: {b.method.replace('_', '-')}, {b.seat} seat", how, seat_text,
+    wait_for_space(run, [f"Block {number}/{total}{' (practice, not scored)' if b.practice else ''}: {b.method.replace('_', '-')}, {b.seat} seat", how, seat_text,
                          f"Click each circle ({b.width * cfg.cm_per_px:.1f} cm wide)."],
                    ready=(lambda: run.seat_ready(b.seat)) if gate else (lambda: True),
                    status=f"{b.seat} seat" if gate else "")
@@ -173,7 +173,7 @@ def run_block(run: Runner, number: int, total: int, gate: bool) -> dict:
             run.step(img)
     mine = [t.shift_at_onset for t in task.trials[block_start:]]
     return {"index": number - 1, "method": b.method, "seat": b.seat, "amplitude_px": b.amplitude,
-            "width_px": b.width, "n_trials": b.n_trials, "first_trial": block_start,
+            "layout": b.layout, "practice": b.practice, "width_px": b.width, "n_trials": b.n_trials, "first_trial": block_start,
             "seat_ok_during_block": bool(mine) and seat_ok(mine, b.seat)}
 
 
@@ -203,7 +203,10 @@ def save(run: Runner, args, blocks_log: list[dict], dots_log: list[dict], state_
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--laps", type=int, default=1, help="laps of the 9-point ring per block")
-    ap.add_argument("--amplitudes", type=float, nargs="+", default=[600.0], help="ring diameters, screen points")
+    ap.add_argument("--amplitudes", type=float, nargs="*", default=[600.0], help="ring diameters, screen points")
+    ap.add_argument("--line-amplitudes", type=float, nargs="*", default=[],
+                    help="distances of the two-target left-right line (long distances), screen points")
+    ap.add_argument("--practice", action="store_true", help="one short unscored warm-up block per method first")
     ap.add_argument("--widths", type=float, nargs="+", default=[70.0, 140.0], help="target diameters, screen points")
     ap.add_argument("--methods", nargs="+", choices=METHODS, default=list(METHODS))
     ap.add_argument("--seats", nargs="+", choices=SEATS, default=list(SEATS))
@@ -221,7 +224,8 @@ def main(argv: list[str] | None = None) -> int:
     tags = condition_tags.resolve(args)               # refuses to record without a person id
     set_tags(tags)
     blocks = make_blocks(cfg, tuple(args.methods), tuple(args.seats), tuple(args.amplitudes), tuple(args.widths),
-                         laps=args.laps, seed=args.seed)
+                         laps=args.laps, seed=args.seed, line_amplitudes=tuple(args.line_amplitudes),
+                         practice=args.practice)
     for sig in (signal.SIGHUP, signal.SIGTERM):
         signal.signal(sig, cm.stop_on_signal)
     with Camera() as cam, FaceTracker() as tracker:
