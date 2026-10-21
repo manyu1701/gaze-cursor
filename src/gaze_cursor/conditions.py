@@ -21,7 +21,13 @@ import numpy as np
 SCHEMA_VERSION = 1
 IRIS_DIAMETER_CM = 1.17       # human iris, ~11.7 mm (CLAUDE.md "Generalisation readiness")
 DEFAULT_FOV_DEG = 65.0        # ASSUMED horizontal field of view of a laptop webcam; stored with every estimate
-LIGHTING_TAGS = ("day", "lamp", "dark", "backlit", "unknown")
+LIGHTING_TAGS = ("day", "lamp", "dark", "backlit", "dim", "front-lit", "mixed", "unknown")
+# day / lamp / dark are typed (they name the light source or the room, which a camera cannot tell). dim, front-lit
+# and mixed are the sensor's own labels (posture.lighting_label), kept under their own names: the sensor's "dim"
+# (face brightness < 50) is not the typed "dark". "backlit" exists in both vocabularies with different definitions
+# (typed: a person's judgement; sensor: face/background ratio < 0.6), so ALWAYS read lighting_tag together with
+# lighting_tag_source ("typed" / "sensor" / "sensor@calibration"; absent = typed) before pooling.
+SENSOR_LIGHTING = {"dim": "dim", "backlit": "backlit", "front-lit": "front-lit", "mixed": "mixed"}
 GLASSES_TAGS = ("yes", "no", "unknown")
 PERSON_ID_PATTERN = re.compile(r"^p\d{2,}$")
 PERSON_ENV = "GAZE_PERSON_ID"
@@ -123,6 +129,9 @@ def build_conditions(
     model_version_id: str | None = None,
     fov_deg: float = DEFAULT_FOV_DEG,
     backfilled: bool = False,
+    lighting_tag_source: str = "typed",
+    posture_measured: Mapping[str, float] | None = None,
+    posture_note_source: str = "typed",
 ) -> dict[str, object]:
     """Assemble the ``meta["conditions"]`` block (plain JSON types). Measured values sit beside their tags."""
     est = estimate_distance_cm(iris_px, image_width, fov_deg)
@@ -139,9 +148,12 @@ def build_conditions(
             "fov_deg_assumed": float(fov_deg),
         },
         "lighting_tag": lighting_tag,
+        "lighting_tag_source": lighting_tag_source,         # "typed" (a person said so) or "sensor" (camera label)
         "lighting_measured": dict(lighting_measured) if lighting_measured else None,
         "glasses": glasses,
         "posture_note": posture_note,
+        "posture_note_source": posture_note_source,         # "typed" or "measured" (from the head pose)
+        "posture_measured": None if posture_measured is None else {k: float(v) for k, v in posture_measured.items()},
         "git_hash": git_hash,
         "model_version": model_version_id,
     }

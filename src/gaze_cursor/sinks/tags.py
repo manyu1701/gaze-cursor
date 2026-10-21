@@ -13,7 +13,7 @@ import argparse
 import json
 import os
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -24,6 +24,7 @@ from gaze_cursor.config import ScreenConfig
 from gaze_cursor.sinks import platform_info
 
 TAGS_FILE = Path.home() / ".gaze-cursor" / "tags.json"
+AUTO_FIELDS = {"lighting": "auto", "posture_note": ""}
 ENV = {"lighting": "GAZE_LIGHTING_TAG", "glasses": "GAZE_GLASSES", "posture_note": "GAZE_POSTURE_NOTE"}
 
 
@@ -32,7 +33,7 @@ class Tags:
     """What the person tells us about this recording (the rest is measured or read from the OS)."""
 
     person_id: str
-    lighting: str = "unknown"
+    lighting: str = "auto"      # "auto": the sensor's label after calibration; a valid tag = typed by a person
     glasses: str = "unknown"
     posture_note: str = ""
 
@@ -41,7 +42,8 @@ def add_arguments(ap: argparse.ArgumentParser) -> None:
     """The shared tag flags (all optional: missing ones come from the environment, last answers or a prompt)."""
     g = ap.add_argument_group("condition tags (stored with the recording)")
     g.add_argument("--person", help="person id, e.g. p01 (also GAZE_PERSON_ID or ~/.gaze-cursor/person.json)")
-    g.add_argument("--lighting", choices=cond.LIGHTING_TAGS[:-1], help="day, lamp, dark or backlit")
+    g.add_argument("--lighting", choices=("day", "lamp", "dark", "backlit"), help="override the camera's own lighting label: day, lamp, dark or backlit "
+                                                                    "(left out: taken from the camera)")
     g.add_argument("--glasses", choices=cond.GLASSES_TAGS[:-1], help="wearing glasses: yes or no")
     g.add_argument("--posture", dest="posture_note", help='posture note, e.g. "upright, laptop on desk"')
 
@@ -66,8 +68,10 @@ def resolve(args: argparse.Namespace, environ: Mapping[str, str] | None = None, 
         value = getattr(args, field, None) or environ.get(ENV[field], "").strip() or ""
         if value and (valid is None or value in valid):
             return value
+        if field in AUTO_FIELDS:      # measured from the camera after calibration: never asked, never reused
+            return AUTO_FIELDS[field]
         default = last.get(field, "")
-        if default and not tty and field != "lighting":     # lighting changes per session: never reuse it silently
+        if default and not tty:
             return default
         if not tty:
             return "unknown" if valid else ""
@@ -94,7 +98,8 @@ def resolve(args: argparse.Namespace, environ: Mapping[str, str] | None = None, 
                 pick("posture_note", None, "Posture note (one short phrase)"))
     try:
         tags_path.parent.mkdir(parents=True, exist_ok=True)
-        tags_path.write_text(json.dumps({k: v for k, v in asdict(tags).items() if k != "person_id" and v}))
+        tags_path.write_text(json.dumps({k: v for k, v in asdict(tags).items()
+                                         if k not in ("person_id", "lighting", "posture_note") and v}))
     except OSError:
         pass
     return tags
@@ -102,15 +107,46 @@ def resolve(args: argparse.Namespace, environ: Mapping[str, str] | None = None, 
 
 def conditions_for(tags: Tags, cfg: ScreenConfig, *, frame_size: tuple[int, int] | None,
                    iris_px: float, lighting_measured: Mapping[str, object] | None = None,
-                   model_version_id: str | None = None) -> dict[str, object]:
-    """The ``meta["conditions"]`` block for a recording made now."""
+                   model_version_id: str | None = None,
+                   posture: Mapping[str, float] | None = None) -> dict[str, object]:
+    """The ``meta["conditions"]`` block for a recording made now.
+
+    Lighting not typed by a person comes from the camera's own label (``lighting_measured["label"]``); a posture
+    note not typed becomes the measured head pose and face distance (``posture``). The source of each is stored.
+    """
     width = frame_size[0] if frame_size else 0
+    lighting_tag, lighting_source = tags.lighting, "typed"
+    if lighting_tag not in cond.LIGHTING_TAGS[:-1]:
+        lighting_tag = cond.SENSOR_LIGHTING.get(str((lighting_measured or {}).get("label", "")), "unknown")
+        lighting_source = "sensor"
+    note, note_source = tags.posture_note, "typed" if tags.posture_note.strip() else "none"
+    if not note.strip() and posture:
+        note, note_source = posture_text(posture), "measured"
     return cond.build_conditions(
         person_id=tags.person_id, camera=platform_info.camera_info(frame_size),
         screen_layout=platform_info.screen_layout(), assumed_distance_cm=cfg.distance_cm,
-        iris_px=iris_px, image_width=width, lighting_tag=tags.lighting, lighting_measured=lighting_measured,
-        glasses=tags.glasses, posture_note=tags.posture_note, git_hash=platform_info.git_hash(),
-        model_version_id=model_version_id)
+        iris_px=iris_px, image_width=width, lighting_tag=lighting_tag, lighting_measured=lighting_measured,
+        glasses=tags.glasses, posture_note=note, git_hash=platform_info.git_hash(),
+        model_version_id=model_version_id, lighting_tag_source=lighting_source,
+        posture_measured=posture, posture_note_source=note_source)
+
+
+def posture_center(per_frame: Sequence[Mapping[str, float]]) -> dict[str, float] | None:
+    """Median of each head-pose metric over the recorded frames (NaN ignored); None if there are none."""
+    out: dict[str, float] = {}
+    for key in ("yaw", "pitch", "roll", "distance", "x", "y"):
+        vals = np.array([f[key] for f in per_frame if key in f], float)
+        vals = vals[~np.isnan(vals)]
+        if len(vals):
+            out[key] = float(np.median(vals))
+    return out or None
+
+
+def posture_text(p: Mapping[str, float]) -> str:
+    """The measured posture as a short phrase for the posture-note field."""
+    nan = float("nan")
+    return (f"measured: yaw {p.get('yaw', nan):+.0f}, pitch {p.get('pitch', nan):+.0f}, "
+            f"roll {p.get('roll', nan):+.0f} deg; face {p.get('distance', nan):.2f} of frame width")
 
 
 def median_iris_px(per_frame: list[float]) -> float:

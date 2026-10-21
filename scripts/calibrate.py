@@ -263,7 +263,8 @@ def main() -> None:
         rec.meta["face_images"] = save_images
         rec.meta["conditions"] = condition_tags.conditions_for(
             tags, cfg, frame_size=tuple(rec.meta["image_size"]) if "image_size" in rec.meta else None,
-            iris_px=condition_tags.median_iris_px(iris_log), lighting_measured=lighting)
+            iris_px=condition_tags.median_iris_px(iris_log), lighting_measured=lighting,
+            posture=condition_tags.posture_center(posture_log))
         path = rec.save(out_dir)
         print(f"Saved {path}")
         condition_tags.print_tag_verdict(rec.meta["conditions"])

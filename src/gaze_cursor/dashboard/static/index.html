@@ -268,13 +268,16 @@ pages.results = async (doc) => {
 const store = {get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} }};
 const post = (body) => fetch("/api/launch", {method: "POST", headers: {"X-Token": TOKEN, "Content-Type": "application/json"}, body: JSON.stringify(body)})
   .then(r => r.json().then(j => { if (!r.ok) throw new Error(j.error || r.status); return j; }));
-const TAGS = {person: store.get("tag.person") || "", lighting_tag: store.get("tag.lighting") || "", glasses: store.get("tag.glasses") || "", posture_note: store.get("tag.posture") || ""};
+// lighting and the posture note are measured by the camera each time: an override lasts for this page only, never remembered
+const REMEMBERED = ["person", "glasses"];
+const TAGS = {person: store.get("tag.person") || "", lighting_tag: "", glasses: store.get("tag.glasses") || "", posture_note: ""};
+const remember = (key, value) => { const k = key.split("_")[0]; if (REMEMBERED.includes(k)) store.set("tag." + k, value); };
 function tagForm() {
   const f = (label, el) => h("label", {class: "small muted", style: "display:flex;flex-direction:column;gap:2px"}, label, el);
-  const sel = (key, opts) => h("select", {onchange: e => { TAGS[key] = e.target.value; store.set("tag." + key.split("_")[0], TAGS[key]); }}, h("option", {value: ""}, "not set"), opts.map(o => h("option", {value: o, selected: TAGS[key] === o}, o)));
-  const txt = (key, ph) => h("input", {type: "text", value: TAGS[key], placeholder: ph, oninput: e => { TAGS[key] = e.target.value.trim(); store.set("tag." + key.split("_")[0], TAGS[key]); }});
+  const sel = (key, opts) => h("select", {onchange: e => { TAGS[key] = e.target.value; remember(key, TAGS[key]); }}, h("option", {value: ""}, "auto"), opts.map(o => h("option", {value: o, selected: TAGS[key] === o}, o)));
+  const txt = (key, ph) => h("input", {type: "text", value: TAGS[key], placeholder: ph, oninput: e => { TAGS[key] = e.target.value.trim(); remember(key, TAGS[key]); }});
   return h("details", {class: "card", open: !TAGS.person}, h("summary", null, "Condition tags for the next recording"),
-    h("p", {class: "small muted"}, "These travel with the launch (as GAZE_PERSON_ID, GAZE_LIGHTING_TAG, GAZE_GLASSES, GAZE_POSTURE_NOTE). The recorders write them into the session as its condition tags; glasses and posture left empty fall back to your last answer; lighting is never reused, an empty one is recorded as unknown."),
+    h("p", {class: "small muted"}, "These travel with the launch (as GAZE_PERSON_ID, GAZE_LIGHTING_TAG, GAZE_GLASSES, GAZE_POSTURE_NOTE). The recorders write them into the session as its condition tags; glasses left empty falls back to your last answer. Lighting left empty is taken from the camera's own measurement (dim / backlit / front-lit / mixed) and a posture note left empty becomes the measured head pose; fill either in only to override the camera."),
     h("div", {class: "row"}, f("Person id (p01, p02 ...)", txt("person", "p01")), f("Lighting", sel("lighting_tag", ["day", "lamp", "dark", "backlit"])),
       f("Glasses", sel("glasses", ["yes", "no"])), f("Posture note", txt("posture_note", "upright, 60 cm"))));
 }

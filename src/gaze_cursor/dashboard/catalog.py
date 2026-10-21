@@ -167,6 +167,8 @@ def build_row(folder: str, p: Path) -> SessionRow:
     if block:
         row.person_id = str(block.get("person_id") or "")
         row.lighting_tag = str(block.get("lighting_tag") or "")
+        if str(block.get("lighting_tag_source", "")).startswith("sensor") and row.lighting_tag:
+            row.lighting_tag += " (camera)"      # a sensor label and a typed word are different definitions
         row.glasses = str(block.get("glasses") or "")
     if row.kind == "cursor":
         s = meta.get("summary") if isinstance(meta.get("summary"), dict) else {}

@@ -158,7 +158,8 @@ def quick_calibration(cam: Camera, tracker: FaceTracker, canvas: FullscreenCanva
     if tags is not None:
         rec.meta["conditions"] = condition_tags.conditions_for(
             tags, cfg, frame_size=tuple(rec.meta["image_size"]) if "image_size" in rec.meta else None,
-            iris_px=condition_tags.median_iris_px(iris_log), lighting_measured=rec.meta.get("lighting"))
+            iris_px=condition_tags.median_iris_px(iris_log), lighting_measured=rec.meta.get("lighting"),
+            posture=condition_tags.posture_center(posture))
     path = rec.save(QUICK_DIR) if record else Path("demo (not saved)")
     if tags is not None:
         condition_tags.print_tag_verdict(rec.meta["conditions"])

@@ -55,19 +55,19 @@ def test_flags_beat_environment_and_environment_beats_last_answers(tmp_path) -> 
 def test_non_interactive_falls_back_to_last_answers_then_unknown(tmp_path) -> None:
     p = paths(tmp_path)
     t = tags.resolve(ns(person="p01"), {}, interactive=False, **p)
-    assert t.lighting == "unknown" and t.glasses == "unknown"          # nothing known: validate will warn
+    assert t.lighting == "auto" and t.glasses == "unknown"             # glasses unknown: validate will warn
     t2 = tags.resolve(ns(person="p01", lighting="day", glasses="no", posture_note="upright"), {},
                       interactive=False, **p)
     t3 = tags.resolve(ns(person="p01"), {}, interactive=False, **p)
-    assert (t3.glasses, t3.posture_note) == (t2.glasses, t2.posture_note)   # remembered
-    assert t3.lighting == "unknown"                                          # lighting is never reused silently
+    assert t3.glasses == t2.glasses == "no"                                  # glasses are remembered
+    assert (t3.lighting, t3.posture_note) == ("auto", "")                    # lighting / posture: measured each time
 
 
 def test_interactive_prompts_validate_and_remember_the_person(tmp_path) -> None:
     p = paths(tmp_path)
-    answers = iter(["bob", "p02", "sunny", "day", "no", "upright"])
+    answers = iter(["bob", "p02", "maybe", "no"])                # person (bad, good), glasses (bad, good): that's all
     t = tags.resolve(ns(), {}, interactive=True, ask=lambda q: next(answers), **p)
-    assert t == tags.Tags("p02", "day", "no", "upright")
+    assert t == tags.Tags("p02", "auto", "no", "")
     assert json.loads(p["person_path"].read_text())["person_id"] == "p02"
 
 

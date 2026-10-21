@@ -78,7 +78,8 @@ def calibrate(cam: Camera, tracker: FaceTracker, cfg: ScreenConfig, record: bool
     return out
 
 
-def session_conditions(tags: condition_tags.Tags, cfg: ScreenConfig, calib: str) -> dict:
+def session_conditions(tags: condition_tags.Tags, cfg: ScreenConfig, calib: str,
+                       posture: dict | None = None, calibrated_at: float | None = None) -> dict:
     """Conditions block of a Cursor log: the calibration's measured values (camera frame size, iris size,
     lighting) with this run's tags, layout and code version; built without iris size if that file is gone."""
     try:
@@ -102,7 +103,15 @@ def session_conditions(tags: condition_tags.Tags, cfg: ScreenConfig, calib: str)
     lighting = lighting or calib_meta.get("lighting")
     out = condition_tags.conditions_for(tags, cfg, frame_size=size,
                                         iris_px=float("nan") if iris is None else float(iris),
-                                        lighting_measured=lighting)
+                                        lighting_measured=lighting,
+                                        posture=posture or block.get("posture_measured"))
+    # A Cursor log's lighting and posture are the CALIBRATION's, which a resumed run may have made hours ago:
+    # say so in the source flags and give the age, so they never read as measured during this run.
+    for key in ("lighting_tag_source", "posture_note_source"):
+        if key in out and out[key] != "typed":
+            out[key] = f"{out[key]}@calibration"
+    out["posture_measured_in"] = calib
+    out["calibration_age_h"] = None if calibrated_at is None else max(0.0, (time.time() - calibrated_at) / 3600)
     out["distance"]["measured_in"] = calib          # these were measured at that calibration, not in this run
     out["lighting_measured_in"] = calib
     return out
@@ -266,7 +275,8 @@ def main() -> int:
         if demo:
             session.banner = "DEMO: nothing is saved"
         else:
-            session.conditions = session_conditions(tags, cfg, session.calib)
+            session.conditions = session_conditions(tags, cfg, session.calib, session.ref_center,
+                                                         session.calibrated_at)
             condition_tags.print_tag_verdict(session.conditions)
             session.keep_faces = not args.no_images
             if saved is None:    # archived only now: the root state of a chain must carry person id and code hash
