@@ -37,7 +37,7 @@ import time
 from types import SimpleNamespace
 
 
-from gaze_cursor import resume
+from gaze_cursor import model_history, resume
 from gaze_cursor.capture import Camera
 from gaze_cursor.config import ScreenConfig
 from gaze_cursor.cursor_session import CursorSession
@@ -116,11 +116,32 @@ def learner(fit: QuickFit, learn: bool):
     return fit.model
 
 
-def remember(session: CursorSession, cfg: ScreenConfig) -> None:
-    """Write the resume file (calibration + learned state) so the next start needs no dots."""
+def remember(session: CursorSession, cfg: ScreenConfig, reason: str) -> None:
+    """Archive the learned state (L2: every state is kept, with provenance), then write the resume file
+    (calibration + learned state) so the next start needs no dots. A full disk must not stop the live loop."""
     if isinstance(session.model, OnlineRidge) and session.ref_center is not None:
+        c = session.conditions or {}
+        try:
+            session.state_id = model_history.archive(
+                QUICK_DIR, session.model, session.x_train, session.ref_center, session.calib, cfg,
+                session.calibrated_at, reason, parent_id=session.state_id,
+                cursor_log=f"cursor_{session.started}.npz", person_id=c.get("person_id"), code=c.get("git_hash"))
+            archived = session.state_id
+        except Exception as e:    # the live loop (and the cursor log at quit) must survive any archive failure
+            archived = None       # session.state_id keeps the last archived state: still the true parent
+            print(f"Model history not written: {e}")
         resume.save(QUICK_DIR, session.model, session.x_train, session.ref_center, session.calib, cfg,
-                    session.calibrated_at)
+                    session.calibrated_at, archived)
+
+
+def preserve_previous(cfg: ScreenConfig) -> None:
+    """Archive the state in ``last_calibration.npz`` before anything can overwrite it (a file written before
+    L2, a stale one, one for another screen). The archive is idempotent, so a state already kept costs nothing."""
+    saved, screen = resume.read_unchecked(QUICK_DIR)
+    if saved is not None:
+        model_history.archive(QUICK_DIR, saved.model, saved.x_train, saved.ref_center, saved.calib,
+                              cfg if screen is None else ScreenConfig(width_px=screen[0], height_px=screen[1]),
+                              saved.calibrated_at, "found on disk at start")
 
 
 def notify(text: str) -> None:
@@ -221,12 +242,17 @@ def main() -> int:
     for sig in (signal.SIGHUP, signal.SIGTERM):
         signal.signal(sig, stop_on_signal)
     with Camera() as cam, FaceTracker() as tracker:
+        if persist:
+            try:
+                preserve_previous(cfg)
+            except Exception as e:
+                print(f"Model history not written: {e}")
         saved, why = (None, "--fresh") if (args.fresh or demo or not learn) else resume.load(QUICK_DIR, cfg)
         names = tuple(tracker.blendshape_names)
         if saved is not None:
             ref_center, resumed = saved.ref_center, ago(saved.age_h())
             session = CursorSession(cfg, saved.model, saved.x_train, ref_center, saved.calib, learn=True,
-                                    resumed=resumed, calibrated_at=saved.calibrated_at)
+                                    resumed=resumed, calibrated_at=saved.calibrated_at, state_id=model_history.state_id(saved.model))
             print(f"Reusing your calibration from {resumed} ({saved.model.n_updates} clicks learned so far). "
                   f"Cmd+Option+R recalibrates; --fresh always starts with the dots.")
         else:
@@ -237,14 +263,14 @@ def main() -> int:
                 return 0
             ref_center = Reference.from_current(fit.posture).center
             session = CursorSession(cfg, learner(fit, learn), fit.x, ref_center, fit.path.name, learn=learn)
-            if persist:
-                remember(session, cfg)
         if demo:
             session.banner = "DEMO: nothing is saved"
         else:
             session.conditions = session_conditions(tags, cfg, session.calib)
             condition_tags.print_tag_verdict(session.conditions)
             session.keep_faces = not args.no_images
+            if saved is None:    # archived only now: the root state of a chain must carry person id and code hash
+                remember(session, cfg, "calibration")
         ref = SimpleNamespace(center=ref_center)
         print("Cursor mode on: tap Right Command to jump to your gaze; Cmd+Option+G on/off, "
               "Cmd+Option+R recalibrate, Cmd+Option+X quit.")
@@ -277,16 +303,18 @@ def main() -> int:
                         break
                     if persist and now_s > next_save:
                         session.save(QUICK_DIR)
-                        remember(session, cfg)
+                        remember(session, cfg, "autosave")
                         next_save = time.monotonic() + AUTOSAVE_S
                     if action == "recalibrate":
                         new = calibrate(cam, tracker, cfg) if persist else calibrate(cam, tracker, cfg, record=False)
                         overlay.restore_policy()
                         if new is not None:
                             ref = Reference.from_current(new.posture)
+                            if persist:
+                                remember(session, cfg, "superseded")   # keep what was learned before it is replaced
                             session.recalibrated(learner(new, learn), new.x, ref.center, new.path.name)
                             if persist:
-                                remember(session, cfg)
+                                remember(session, cfg, "calibration")
                         last_lines = None
                         continue
                     nap = idle.message(now_s)             # low power, then a countdown to the auto-quit
@@ -304,7 +332,7 @@ def main() -> int:
         finally:
             cursor.close()
             if persist:
-                remember(session, cfg)
+                remember(session, cfg, "quit")
                 finish(session)
             else:
                 print("Demo ended: nothing was saved.")

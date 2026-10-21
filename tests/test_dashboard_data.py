@@ -115,7 +115,7 @@ def test_learned_state_reads_meta_only_and_flags_stale(roots) -> None:
     now = time.time()
     s = summaries.learned_state(roots, now)
     assert s["exists"] and s["reusable"] and 0.9 < s["age_h"] < 1.1 and s["n_updates"] == 0
-    assert "L2 not built" in s["history"]
+    assert s["n_states"] == 0 and "none yet" in s["history"]
     late = summaries.learned_state(roots, now + 13 * 3600)
     assert late["reusable"] is False
     (roots.quick / "last_calibration.npz").unlink()

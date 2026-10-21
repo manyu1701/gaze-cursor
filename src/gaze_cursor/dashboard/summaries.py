@@ -19,6 +19,7 @@ import numpy as np
 from gaze_cursor.conditions import N_CHECKED
 from gaze_cursor.dashboard.catalog import Roots, SessionRow
 from gaze_cursor.eval.prereg3 import slot_from_note
+from gaze_cursor import model_history
 from gaze_cursor.resume import FILE_NAME, MAX_AGE_H
 
 DOCS = ("RESULTS", "PREREGISTRATIONS", "PLAN", "README")
@@ -80,14 +81,14 @@ def tag_completeness(rows: list[SessionRow]) -> dict:
 
 
 def learned_state(roots: Roots, now: float | None = None) -> dict:
-    """The one persisted learned state: ``last_calibration.npz`` (overwritten at every autosave).
-
-    Reads its small ``meta`` only (the model arrays are not loaded). There is no history of earlier states
-    until PLAN step L2 exists, and the UI says so.
-    """
+    """The current learned state (``last_calibration.npz``, overwritten at every autosave) and the archive of
+    every state kept beside it (``model_states/``, L2). Reads small ``meta`` only (no model arrays)."""
     path = roots.quick / FILE_NAME
-    out: dict = {"exists": False, "history": "none: one file, overwritten at every autosave (L2 not built)",
-                 "max_age_h": MAX_AGE_H}
+    states = [m for m in model_history.list_states(roots.quick) if "state_id" in m]
+    out: dict = {"exists": False, "max_age_h": MAX_AGE_H, "n_states": len(states),
+                 "history": (f"{len(states)} states kept, newest {states[-1]['archived_at_utc']} "
+                             f"({states[-1]['reason']}, {states[-1]['n_updates']} updates)" if states else
+                             "none yet: states are kept from the next Cursor session on (model_states/)")}
     if not path.exists():
         return out
     try:

@@ -78,7 +78,8 @@ def model_version(mean: np.ndarray, scale: np.ndarray, theta: np.ndarray, P: np.
     """Short hash of a model's starting state (its bytes), the link from a session to the model that began it.
 
     Identical arrays give an identical id; any change gives a different one. The state after later
-    clicks is not hashed: it is rebuilt by replaying the logged clicks.
+    clicks is not hashed here (it is rebuilt by replaying the logged clicks); ``model_history.state_id`` adds the
+    update count and names every archived state.
     """
     h = hashlib.sha256()
     for a in (mean, scale, theta, P):

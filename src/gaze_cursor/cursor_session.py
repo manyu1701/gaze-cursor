@@ -71,6 +71,7 @@ class CursorSession:
     calibrated_at: float = field(default_factory=time.time)   # epoch s of the 9 dots (carried over on resume)
     conditions: dict | None = None      # the meta["conditions"] block of the recording (None: demo / tests)
     model_versions: list[str | None] = field(default_factory=list)   # starting-state hash per calibration
+    state_id: str | None = None         # model_history id of the last archived state (parent of the next)
     keep_faces: bool = False            # keep face crops from the label window before each click (local only)
     face_jpegs: list[bytes] = field(default_factory=list)
     face_rows: list[list[float]] = field(default_factory=list)   # [event row, frame time, ms before the click]
@@ -103,6 +104,7 @@ class CursorSession:
         self.calibrations.append([None, calib])
         self.model_versions.append(self._model_version())
         self.calibrated_at = time.time()
+        self.state_id = None            # a new calibration starts a new chain
         self.learned = 0
 
     # --- per frame -----------------------------------------------------------------------------
