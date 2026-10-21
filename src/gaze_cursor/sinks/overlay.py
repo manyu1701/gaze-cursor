@@ -73,6 +73,7 @@ class FullscreenCanvas:
         self._window = None
         self._app = None
         self._cursor_hidden: bool | None = None
+        self.keep_pointer = False  # True for tasks that need the user to see and move the system pointer
 
     def __enter__(self) -> FullscreenCanvas:
         import AppKit
@@ -128,7 +129,7 @@ class FullscreenCanvas:
         """Hide the mouse pointer only while we have focus; show it when the user must click."""
         import AppKit
 
-        hide = self.has_focus
+        hide = self.has_focus and not self.keep_pointer
         if hide != self._cursor_hidden:
             (AppKit.NSCursor.hide if hide else AppKit.NSCursor.unhide)()
             self._cursor_hidden = hide
@@ -172,6 +173,11 @@ class FullscreenCanvas:
         x, y = self._px(center)
         h = int(round(half))
         cv2.rectangle(img, (x - h, y - h), (x + h, y + h), color, thickness, cv2.LINE_AA)
+
+    def circle(self, img: np.ndarray, center: tuple[float, float], radius: float, color=(255, 255, 255),
+               thickness: int = 3) -> None:
+        """A circle of ``radius`` screen points centred at ``center``; ``thickness=-1`` fills it."""
+        cv2.circle(img, self._px(center), int(round(radius)), color, thickness, cv2.LINE_AA)
 
     def marker(self, img: np.ndarray, xy: tuple[float, float], color=(255, 255, 0), r: int = 10) -> None:
         """A filled dot with a dark rim (the live gaze position)."""
