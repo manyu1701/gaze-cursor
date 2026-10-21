@@ -241,7 +241,9 @@ def test_open_preregistrations_are_closed_by_matching_results() -> None:
     assert guard.open_preregistrations(PREREG) == ["Pre-registration, round 4: clicks (FROZEN)"]
     closed = PREREG + "### RESULT, round 4 (H6), run once\n"
     assert guard.open_preregistrations(closed) == []
-    assert guard.open_preregistrations((ROOT / "PREREGISTRATIONS.md").read_text()) == []   # the real file: all closed
+    # The real file: every round before round 5 is closed (a newer protocol is open until its RESULT is appended).
+    real = guard.open_preregistrations((ROOT / "PREREGISTRATIONS.md").read_text())
+    assert all("round 5" in title for title in real), real
 
 
 def test_checkpoint_gate_fires_on_a_new_done_only(g) -> None:
