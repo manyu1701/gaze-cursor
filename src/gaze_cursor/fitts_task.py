@@ -227,7 +227,8 @@ class FittsTask:
         elif event.kind == "warp" and trial.t_warp is None:
             trial.t_warp = event.t_ms
         elif event.kind == "landing" and event.xy is not None and trial.t_warp is not None:
-            trial.warp_landing, trial.t_landing = event.xy, event.t_ms
+            if trial.warp_landing is None:           # the FIRST jump's landing; later jumps are only in the path
+                trial.warp_landing, trial.t_landing = event.xy, event.t_ms
             self.moves.append((event.t_ms, event.xy[0], event.xy[1], trial.index))
         elif event.kind == "click" and event.button == "left" and event.xy is not None:
             trial.t_click, trial.click_xy = event.t_ms, event.xy

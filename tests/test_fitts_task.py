@@ -61,6 +61,9 @@ def test_a_trial_records_phases_and_the_click_decides_hit_or_miss() -> None:
     task.on_event(ev("warp", 1300.0))
     task.on_event(ev("landing", 1301.0, (700.0, 400.0)))
     assert trial.t_landing == 1301.0
+    task.on_event(ev("warp", 1400.0))                                 # a second jump changes neither field
+    task.on_event(ev("landing", 1401.0, (5.0, 5.0)))
+    assert (trial.t_warp, trial.warp_landing, trial.t_landing) == (1300.0, (700.0, 400.0), 1301.0)
     assert task.on_event(ev("click", 1900.0, (0, 0), "left")) == "miss"     # a click far from the target
     assert trial.hit is False and (trial.endpoint_error_px or 0) > 30
     task.mark_shown(trial, 1016.0)
