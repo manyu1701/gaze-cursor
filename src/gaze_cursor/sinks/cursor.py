@@ -30,14 +30,14 @@ DEFAULT_WARP_KEY = "right_command"
 
 @dataclass(frozen=True)
 class InputEvent:
-    kind: str                            # "warp", "toggle", "recalibrate", "quit", "click"
+    kind: str                            # "warp", "toggle", "recalibrate", "quit", "click", "move", "landing"
     t_ms: float                          # monotonic milliseconds (the camera frames' clock)
-    xy: tuple[float, float] | None = None  # click position in main-display points
+    xy: tuple[float, float] | None = None  # click / pointer position in main-display points
     button: str | None = None            # "left" / "right" for clicks
 
 
 class CursorSink(Protocol):
-    def warp(self, xy: tuple[float, float]) -> None: ...
+    def warp(self, xy: tuple[float, float]) -> tuple[float, float]: ...
     def poll(self) -> list[InputEvent]: ...
 
 
@@ -84,6 +84,11 @@ class HotkeyDetector:
         self._down_at = None                                   # Cmd-click is not a warp tap
         return [InputEvent("click", t_ms, (float(xy[0]), float(xy[1])), button)]
 
+    def mouse_moved(self, xy: tuple[float, float], t_ms: float) -> list[InputEvent]:
+        """A pointer move (trackpad or drag). It does not cancel a warp tap: moving the pointer while the
+        modifier is down is not using the modifier."""
+        return [InputEvent("move", t_ms, (float(xy[0]), float(xy[1])))]
+
 
 def event_time_ms(event_ns: int, now_ms: float) -> float:
     """The event's own timestamp in monotonic ms when it is plausible (on macOS both count from boot),
@@ -122,16 +127,23 @@ class MacCursor:
     """``CursorSink`` on macOS: warps the cursor and collects hotkeys and clicks from a listen-only tap.
     Call ``poll()`` once per frame from the main thread: it pumps the run loop and returns new events."""
 
-    def __init__(self, size: tuple[int, int], detector: HotkeyDetector | None = None) -> None:
+    def __init__(self, size: tuple[int, int], detector: HotkeyDetector | None = None,
+                 track_moves: bool = False) -> None:
+        """``track_moves`` also reports every pointer move (``move`` events, about 100 per second while the
+        pointer moves) and each warp's measured landing (``landing``): for tasks that time the pointer path."""
         import Quartz
 
         self._q = Quartz
         self.size = size
         self.detector = detector or HotkeyDetector()
+        self.track_moves = track_moves
         self._events: list[InputEvent] = []
+        kinds = [Quartz.kCGEventFlagsChanged, Quartz.kCGEventKeyDown,
+                 Quartz.kCGEventLeftMouseDown, Quartz.kCGEventRightMouseDown]
+        if track_moves:
+            kinds += [Quartz.kCGEventMouseMoved, Quartz.kCGEventLeftMouseDragged, Quartz.kCGEventRightMouseDragged]
         mask = 0
-        for kind in (Quartz.kCGEventFlagsChanged, Quartz.kCGEventKeyDown,
-                     Quartz.kCGEventLeftMouseDown, Quartz.kCGEventRightMouseDown):
+        for kind in kinds:
             mask |= Quartz.CGEventMaskBit(kind)
         self._tap = Quartz.CGEventTapCreate(Quartz.kCGSessionEventTap, Quartz.kCGHeadInsertEventTap,
                                             Quartz.kCGEventTapOptionListenOnly, mask, self._callback, None)
@@ -158,6 +170,9 @@ class MacCursor:
             loc = q.CGEventGetLocation(event)
             button = "left" if kind == q.kCGEventLeftMouseDown else "right"
             self._events += self.detector.mouse_down((loc.x, loc.y), button, t)
+        elif kind in (q.kCGEventMouseMoved, q.kCGEventLeftMouseDragged, q.kCGEventRightMouseDragged):
+            loc = q.CGEventGetLocation(event)
+            self._events += self.detector.mouse_moved((loc.x, loc.y), t)
         return event                                           # listen-only: never altered
 
     def poll(self) -> list[InputEvent]:
@@ -165,10 +180,21 @@ class MacCursor:
         out, self._events = self._events, []
         return out
 
-    def warp(self, xy: tuple[float, float]) -> None:
+    def pointer(self) -> tuple[float, float]:
+        """Where the system cursor is now (main-display points, top-left origin)."""
+        loc = self._q.CGEventGetLocation(self._q.CGEventCreate(None))
+        return float(loc.x), float(loc.y)
+
+    def warp(self, xy: tuple[float, float]) -> tuple[float, float]:
+        """Jump the cursor to ``xy`` (clamped to the display); returns the position the system reports
+        right after (the landing). With ``track_moves`` it is also queued as a ``landing`` event."""
         x, y = clamp(xy, self.size)
         self._q.CGWarpMouseCursorPosition((x, y))
         self._q.CGAssociateMouseAndMouseCursorPosition(True)  # the trackpad moves it again at once
+        landed = self.pointer()
+        if self.track_moves:
+            self._events.append(InputEvent("landing", time.monotonic_ns() / 1e6, landed))
+        return landed
 
     def close(self) -> None:
         if self._tap is not None:

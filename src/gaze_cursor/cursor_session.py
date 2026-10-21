@@ -28,7 +28,7 @@ from gaze_cursor.sinks.cursor import InputEvent
 OOD_Z = 4.0                 # same input-range rule as Run
 STALE_MS = 250.0            # no warp if the last good gaze sample is older than this
 LABEL_WINDOW_MS = (-400.0, -100.0)   # the fixation that guided a click, before the hand moved
-EVENT_CODES = {"warp": 0, "toggle": 1, "quit": 2, "click": 3, "recalibrate": 4}
+EVENT_CODES = {"warp": 0, "toggle": 1, "quit": 2, "click": 3, "recalibrate": 4, "landing": 5}
 FACE_PER_CLICK = 3          # face crops kept per click, evenly spread over LABEL_WINDOW_MS
 FACE_MAX_BYTES = 150_000_000   # stop keeping crops beyond this (a long session); the click log is unaffected
 
@@ -288,12 +288,15 @@ class CursorSession:
             return None
         return {**self.conditions, "model_version": self.model_versions[0] if self.model_versions else None}
 
-    def save(self, directory: Path) -> Path:
-        """Write the whole session (atomically: a crash mid-write keeps the previous autosave)."""
+    def save(self, directory: Path, *, prefix: str = "cursor", kind: str = "cursor_session",
+             extra_meta: dict | None = None, extra_arrays: dict[str, np.ndarray] | None = None) -> Path:
+        """Write the whole session (atomically: a crash mid-write keeps the previous autosave). A task that
+        builds on this log (the Fitts task) gives its own file ``prefix`` / ``kind`` and adds its trials
+        (``extra_meta``) and arrays (``extra_arrays``) to the same standard contents."""
         directory.mkdir(parents=True, exist_ok=True)
-        path = directory / f"cursor_{self.started}.npz"
-        tmp = directory / f".cursor_{self.started}.tmp.npz"
-        meta = {"kind": "cursor_session", "calibration": self.calib, "calibrations": self.calibrations,
+        path = directory / f"{prefix}_{self.started}.npz"
+        tmp = directory / f".{prefix}_{self.started}.tmp.npz"
+        meta = {"kind": kind, "calibration": self.calib, "calibrations": self.calibrations,
                 "filter": RUN_FILTER,
                 "screen": self.cfg.to_dict(), "started": self.started, "frame_columns": self.FRAME_COLUMNS,
                 "event_columns": self.EVENT_COLUMNS, "event_codes": EVENT_CODES,
@@ -303,13 +306,13 @@ class CursorSession:
                 "conditions": self._conditions(), "model_versions": self.model_versions,
                 "learning": {"on": self.learn, "resumed": self.resumed, "gate_deg": GATE_DEG,
                              "forget": getattr(self.model, "forget", None)},
-                "face_crops": self._face_meta(path)}
+                "face_crops": self._face_meta(path), **(extra_meta or {})}
         np.savez_compressed(tmp, frames=np.array(self.frames, float).reshape(-1, len(self.FRAME_COLUMNS)),
                             events=np.array(self.events, float).reshape(-1, len(self.EVENT_COLUMNS)),
-                            meta=json.dumps(meta))
+                            meta=json.dumps(meta), **(extra_arrays or {}))
         tmp.replace(path)
         if self.face_jpegs:
-            ftmp = directory / f".cursor_{self.started}.faces.tmp.npz"
+            ftmp = directory / f".{prefix}_{self.started}.faces.tmp.npz"
             save_faces(ftmp, self.face_jpegs, self.face_boxes, extra={
                 "event_row": np.array([r[0] for r in self.face_rows], np.int32),
                 "t_ms": np.array([r[1] for r in self.face_rows], float),

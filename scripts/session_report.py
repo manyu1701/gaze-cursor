@@ -111,7 +111,7 @@ def run(path: Path, out_dir: Path | None, results_csv: Path | None) -> int:
     if why:
         print(f"REFUSED {path.name}: {why}", file=sys.stderr)
         return 2
-    if path.name.startswith("cursor_"):
+    if path.name.startswith(("cursor_", "fitts_")):
         return tag_report(path.name, read_meta(path), path)
     s = load_session(path)
     if is_cursor_mode(s):
